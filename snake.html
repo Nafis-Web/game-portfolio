@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Snake</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .game-wrap {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background:
+        radial-gradient(circle at center, rgba(255, 102, 0, 0.12), transparent 55%),
+        linear-gradient(to bottom, #050505, #111111);
+    }
+
+    canvas {
+      display: block;
+      background: #000;
+      border: 2px solid #ff6600;
+      box-shadow: 0 0 20px rgba(255, 102, 0, 0.25);
+      max-width: 100%;
+      max-height: 100%;
+    }
+  </style>
+</head>
+<body tabindex="0">
+  <div class="game-wrap">
+    <canvas id="gameCanvas" width="600" height="400"></canvas>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const WIDTH = canvas.width;
+    const HEIGHT = canvas.height;
+    const BLOCK_SIZE = 20;
+
+    const STATE_START = "start";
+    const STATE_PLAYING = "playing";
+    const STATE_GAME_OVER = "game_over";
+
+    const DIFFICULTIES = {
+      EASY:   { fps: 8, reward: 1 },
+      MEDIUM: { fps: 12, reward: 2 },
+      HARD:   { fps: 16, reward: 3 }
+    };
+
+    const COLORS = {
+      BLACK: "#000000",
+      WHITE: "#ffffff",
+      GRID: "#5a5a5a",
+      BODY_RED: "#c80000",
+      HEAD_RED: "#ff3c3c",
+      APPLE_RED: "#dc0000",
+      STEM_BROWN: "#78460f",
+      EYE: "#000000",
+      BG_NAVY: "#0c0e23",
+      PANEL: "#1e2346",
+      PANEL2: "#161a37",
+      ACCENT: "#50b4ff",
+      ACCENT2: "#ffd250",
+      GOOD: "#5adc8c",
+      BAD: "#ff6e6e"
+    };
+
+    let gameState = STATE_START;
+    let difficulty = "EASY";
+
+    let currentFps = DIFFICULTIES[difficulty].fps;
+    let pointsPerApple = DIFFICULTIES[difficulty].reward;
+    let gameplayFps = currentFps;
+
+    const SPEEDUP_EVERY_POINTS = 5;
+    const SPEEDUP_AMOUNT_FPS = 2;
+    const MAX_FPS = 30;
+
+    let snakeBody = [];
+    let xChange = BLOCK_SIZE;
+    let yChange = 0;
+    let direction = "RIGHT";
+
+    let score = 0;
+    let highScore = 0;
+    let foodPos = { x: 0, y: 0 };
+
+    let lastTime = 0;
+    let accumulatedTime = 0;
+
+    function applyDifficulty() {
+      currentFps = DIFFICULTIES[difficulty].fps;
+      pointsPerApple = DIFFICULTIES[difficulty].reward;
+      updateSpeedByScore();
+    }
+
+    function updateSpeedByScore() {
+      const tiers = Math.floor(score / SPEEDUP_EVERY_POINTS);
+      gameplayFps = Math.min(MAX_FPS, currentFps + tiers * SPEEDUP_AMOUNT_FPS);
+    }
+
+    function resetGame() {
+      snakeBody = [
+        { x: 100, y: 100 },
+        { x: 80, y: 100 },
+        { x: 60, y: 100 }
+      ];
+
+      xChange = BLOCK_SIZE;
+      yChange = 0;
+      direction = "RIGHT";
+      score = 0;
+      updateSpeedByScore();
+      foodPos = spawnFoodAvoidingSnake();
+      gameState = STATE_PLAYING;
+    }
+
+    function spawnFood() {
+      const x = Math.floor(Math.random() * (WIDTH / BLOCK_SIZE)) * BLOCK_SIZE;
+      const y = Math.floor(Math.random() * (HEIGHT / BLOCK_SIZE)) * BLOCK_SIZE;
+      return { x, y };
+    }
+
+    function spawnFoodAvoidingSnake() {
+      let pos;
+      do {
+        pos = spawnFood();
+      } while (snakeBody.some(segment => segment.x === pos.x && segment.y === pos.y));
+      return pos;
+    }
+
+    function checkSelfCollision(newHead) {
+      return snakeBody.some(segment => segment.x === newHead.x && segment.y === newHead.y);
+    }
+
+    function updateHighScore() {
+      if (score > highScore) {
+        highScore = score;
+      }
+    }
+
+    function drawGrid() {
+      ctx.strokeStyle = COLORS.GRID;
+      ctx.lineWidth = 1;
+
+      for (let x = 0; x < WIDTH; x += BLOCK_SIZE) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, HEIGHT);
+        ctx.stroke();
+      }
+
+      for (let y = 0; y < HEIGHT; y += BLOCK_SIZE) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(WIDTH, y);
+        ctx.stroke();
+      }
+    }
+
+    function drawApple(pos) {
+      const centerX = pos.x + BLOCK_SIZE / 2;
+      const centerY = pos.y + BLOCK_SIZE / 2;
+
+      ctx.fillStyle = COLORS.APPLE_RED;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, BLOCK_SIZE / 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = COLORS.STEM_BROWN;
+      ctx.fillRect(centerX - 2, pos.y - 4, 4, 6);
+    }
+
+    function drawSnake() {
+      for (let i = 1; i < snakeBody.length; i++) {
+        ctx.fillStyle = COLORS.BODY_RED;
+        ctx.fillRect(snakeBody[i].x, snakeBody[i].y, BLOCK_SIZE, BLOCK_SIZE);
+      }
+
+      const head = snakeBody[0];
+      ctx.fillStyle = COLORS.HEAD_RED;
+      ctx.fillRect(head.x, head.y, BLOCK_SIZE, BLOCK_SIZE);
+
+      let eye1, eye2;
+
+      if (direction === "RIGHT") {
+        eye1 = { x: head.x + 14, y: head.y + 6 };
+        eye2 = { x: head.x + 14, y: head.y + 14 };
+      } else if (direction === "LEFT") {
+        eye1 = { x: head.x + 6, y: head.y + 6 };
+        eye2 = { x: head.x + 6, y: head.y + 14 };
+      } else if (direction === "UP") {
+        eye1 = { x: head.x + 6, y: head.y + 6 };
+        eye2 = { x: head.x + 14, y: head.y + 6 };
+      } else {
+        eye1 = { x: head.x + 6, y: head.y + 14 };
+        eye2 = { x: head.x + 14, y: head.y + 14 };
+      }
+
+      ctx.fillStyle = COLORS.EYE;
+      ctx.beginPath();
+      ctx.arc(eye1.x, eye1.y, 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(eye2.x, eye2.y, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawScore() {
+      ctx.fillStyle = COLORS.WHITE;
+      ctx.font = "24px Arial";
+      ctx.fillText(`Score: ${score}`, 10, 28);
+      ctx.fillText(`High: ${highScore}`, 10, 54);
+    }
+
+    function drawPanel(x, y, w, h, fillColor, borderColor, borderWidth = 2) {
+      ctx.fillStyle = fillColor;
+      roundRect(ctx, x, y, w, h, 14, true, false);
+
+      ctx.lineWidth = borderWidth;
+      ctx.strokeStyle = borderColor;
+      roundRect(ctx, x, y, w, h, 14, false, true);
+    }
+
+    function drawDifficultyButtons(yTop) {
+      const btnW = 140;
+      const btnH = 46;
+      const gap = 18;
+      const totalW = btnW * 3 + gap * 2;
+      const startX = (WIDTH - totalW) / 2;
+      const labels = ["EASY", "MEDIUM", "HARD"];
+
+      labels.forEach((label, i) => {
+        const x = startX + i * (btnW + gap);
+        const selected = difficulty === label;
+        const fill = selected ? "#506ec8" : "#374682";
+        const border = selected ? COLORS.ACCENT2 : COLORS.ACCENT;
+
+        drawPanel(x, yTop, btnW, btnH, fill, border, selected ? 3 : 2);
+
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = "26px Arial";
+        const textWidth = ctx.measureText(label).width;
+        ctx.fillText(label, x + (btnW - textWidth) / 2, yTop + 30);
+      });
+    }
+
+    function drawStartScreen() {
+      ctx.fillStyle = COLORS.BG_NAVY;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      ctx.fillStyle = COLORS.WHITE;
+      ctx.font = "bold 64px Arial";
+      let text = "SNAKE";
+      let textWidth = ctx.measureText(text).width;
+      ctx.fillText(text, (WIDTH - textWidth) / 2, 80);
+
+      ctx.font = "22px Arial";
+      text = "Eat apples. Don't hit walls or yourself.";
+      textWidth = ctx.measureText(text).width;
+      ctx.fillStyle = "#c8d2ff";
+      ctx.fillText(text, (WIDTH - textWidth) / 2, 108);
+
+      drawPanel(70, 130, WIDTH - 140, 210, COLORS.PANEL, COLORS.ACCENT, 2);
+
+      ctx.fillStyle = COLORS.WHITE;
+      ctx.font = "28px Arial";
+      text = "Choose Difficulty";
+      textWidth = ctx.measureText(text).width;
+      ctx.fillText(text, (WIDTH - textWidth) / 2, 165);
+
+      drawDifficultyButtons(185);
+
+      applyDifficulty();
+
+      ctx.font = "22px Arial";
+      ctx.fillStyle = "#e6ebff";
+      text = `Base Speed: ${currentFps} FPS   |   Reward: +${pointsPerApple} per apple`;
+      textWidth = ctx.measureText(text).width;
+      ctx.fillText(text, (WIDTH - textWidth) / 2, 252);
+
+      ctx.fillStyle = COLORS.GOOD;
+      text = "Speed-up: every 5 points -> +2 FPS";
+      textWidth = ctx.measureText(text).width;
+      ctx.fillText(text, (WIDTH - textWidth) / 2, 278);
+
+      ctx.fillStyle = COLORS.ACCENT2;
+      text = "Arrow keys to move. S = Start   (Click also starts)";
+      textWidth = ctx.measureText(text).width;
+      ctx.fillText(text, (WIDTH - textWidth) / 2, 312);
+
+      ctx.fillStyle = "#b4bee6";
+      text = "Press 1 / 2 / 3 to select difficulty";
+      textWidth = ctx.measureText(text).width;
+      ctx.fillText(text, (WIDTH - textWidth) / 2, 338);
+    }
+
+    function drawGameOverScreen() {
+      ctx.fillStyle = "#190812";
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      ctx.fillStyle = COLORS.WHITE;
+      ctx.font = "bold 64px Arial";
+      let text = "GAME OVER";
+      let textWidth = ctx.measureText(text).width;
+      ctx.fillText(text, (WIDTH - textWidth) / 2, 75);
+
+      drawPanel(70, 110, WIDTH - 140, 250, COLORS.PANEL2, COLORS.BAD, 2);
+
+      ctx.font = "28px Arial";
+      text = `Final Score: ${score}   |   High Score: ${highScore}`;
+      textWidth = ctx.measureText(text).width;
+      ctx.fillText(text, (WIDTH - textWidth) / 2, 148);
+
+      text = "Pick a Difficulty for Restart";
+      textWidth = ctx.measureText(text).width;
+      ctx.fillText(text, (WIDTH - textWidth) / 2, 188);
+
+      drawDifficultyButtons(210);
+
+      applyDifficulty();
+
+      ctx.font = "22px Arial";
+      ctx.fillStyle = "#e6ebff";
+      text = `Base Speed: ${currentFps} FPS   |   Reward: +${pointsPerApple} per apple`;
+      textWidth = ctx.measureText(text).width;
+      ctx.fillText(text, (WIDTH - textWidth) / 2, 278);
+
+      ctx.fillStyle = COLORS.GOOD;
+      text = "Speed-up: every 5 points -> +2 FPS";
+      textWidth = ctx.measureText(text).width;
+      ctx.fillText(text, (WIDTH - textWidth) / 2, 304);
+
+      ctx.fillStyle = COLORS.ACCENT2;
+      text = "R = Restart   |   Q = Quit   |   Click = Restart";
+      textWidth = ctx.measureText(text).width;
+      ctx.fillText(text, (WIDTH - textWidth) / 2, 338);
+    }
+
+    function updateGame() {
+      if (gameState !== STATE_PLAYING) return;
+
+      const head = snakeBody[0];
+      const newHead = {
+        x: head.x + xChange,
+        y: head.y + yChange
+      };
+
+      if (
+        newHead.x < 0 ||
+        newHead.x >= WIDTH ||
+        newHead.y < 0 ||
+        newHead.y >= HEIGHT
+      ) {
+        updateHighScore();
+        gameState = STATE_GAME_OVER;
+        return;
+      }
+
+      if (checkSelfCollision(newHead)) {
+        updateHighScore();
+        gameState = STATE_GAME_OVER;
+        return;
+      }
+
+      snakeBody.unshift(newHead);
+
+      if (newHead.x === foodPos.x && newHead.y === foodPos.y) {
+        score += pointsPerApple;
+        if (score > highScore) {
+          highScore = score;
+        }
+        updateSpeedByScore();
+        foodPos = spawnFoodAvoidingSnake();
+      } else {
+        snakeBody.pop();
+      }
+    }
+
+    function drawGame() {
+      if (gameState === STATE_START) {
+        drawStartScreen();
+      } else if (gameState === STATE_PLAYING) {
+        ctx.fillStyle = COLORS.BLACK;
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        drawGrid();
+        drawApple(foodPos);
+        drawSnake();
+        drawScore();
+
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = "20px Arial";
+        let diffText = `${difficulty} | +${pointsPerApple} | Speed: ${gameplayFps} FPS`;
+        let diffWidth = ctx.measureText(diffText).width;
+        ctx.fillText(diffText, WIDTH - diffWidth - 10, 24);
+
+        const tier = Math.floor(score / SPEEDUP_EVERY_POINTS);
+        let tierText = `Speed Tier: ${tier}`;
+        let tierWidth = ctx.measureText(tierText).width;
+        ctx.fillStyle = "#c8c8c8";
+        ctx.fillText(tierText, WIDTH - tierWidth - 10, 46);
+      } else if (gameState === STATE_GAME_OVER) {
+        drawGameOverScreen();
+      }
+    }
+
+    function gameLoop(timestamp) {
+      if (!lastTime) lastTime = timestamp;
+      const delta = timestamp - lastTime;
+      lastTime = timestamp;
+
+      const frameDuration = 1000 / (gameState === STATE_PLAYING ? gameplayFps : 30);
+      accumulatedTime += delta;
+
+      while (accumulatedTime >= frameDuration) {
+        updateGame();
+        accumulatedTime -= frameDuration;
+      }
+
+      drawGame();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
+      if (typeof radius === "number") {
+        radius = { tl: radius, tr: radius, br: radius, bl: radius };
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(x + radius.tl, y);
+      ctx.lineTo(x + width - radius.tr, y);
+      ctx.quadraticCurveTo(x + width, y, x + width, y + radius.tr);
+      ctx.lineTo(x + width, y + height - radius.br);
+      ctx.quadraticCurveTo(x + width, y + height, x + width - radius.br, y + height);
+      ctx.lineTo(x + radius.bl, y + height);
+      ctx.quadraticCurveTo(x, y + height, x, y + height - radius.bl);
+      ctx.lineTo(x, y + radius.tl);
+      ctx.quadraticCurveTo(x, y, x + radius.tl, y);
+      ctx.closePath();
+
+      if (fill) ctx.fill();
+      if (stroke) ctx.stroke();
+    }
+
+    function setDirectionFromKey(key) {
+      if (key === "ArrowUp" && yChange === 0) {
+        xChange = 0;
+        yChange = -BLOCK_SIZE;
+        direction = "UP";
+      } else if (key === "ArrowDown" && yChange === 0) {
+        xChange = 0;
+        yChange = BLOCK_SIZE;
+        direction = "DOWN";
+      } else if (key === "ArrowLeft" && xChange === 0) {
+        xChange = -BLOCK_SIZE;
+        yChange = 0;
+        direction = "LEFT";
+      } else if (key === "ArrowRight" && xChange === 0) {
+        xChange = BLOCK_SIZE;
+        yChange = 0;
+        direction = "RIGHT";
+      }
+    }
+
+    document.addEventListener("keydown", (event) => {
+      const keysToBlock = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "];
+      if (keysToBlock.includes(event.key)) {
+        event.preventDefault();
+      }
+
+      if (gameState === STATE_START) {
+        if (event.key === "1") {
+          difficulty = "EASY";
+          applyDifficulty();
+        } else if (event.key === "2") {
+          difficulty = "MEDIUM";
+          applyDifficulty();
+        } else if (event.key === "3") {
+          difficulty = "HARD";
+          applyDifficulty();
+        } else if (event.key.toLowerCase() === "s") {
+          resetGame();
+        }
+      } else if (gameState === STATE_GAME_OVER) {
+        if (event.key === "1") {
+          difficulty = "EASY";
+          applyDifficulty();
+        } else if (event.key === "2") {
+          difficulty = "MEDIUM";
+          applyDifficulty();
+        } else if (event.key === "3") {
+          difficulty = "HARD";
+          applyDifficulty();
+        } else if (event.key.toLowerCase() === "r") {
+          resetGame();
+        } else if (event.key.toLowerCase() === "q") {
+          gameState = STATE_START;
+        }
+      } else if (gameState === STATE_PLAYING) {
+        setDirectionFromKey(event.key);
+      }
+    });
+
+    canvas.addEventListener("click", () => {
+      if (gameState === STATE_START || gameState === STATE_GAME_OVER) {
+        resetGame();
+      }
+      canvas.focus();
+      document.body.focus();
+      window.focus();
+    });
+
+    window.addEventListener("load", () => {
+      document.body.focus();
+      window.focus();
+      applyDifficulty();
+      requestAnimationFrame(gameLoop);
+    });
+  </script>
+</body>
+</html>
