@@ -140,6 +140,10 @@
 
     let enemySpawnTimer = 0;
     let shootCooldown = 0;
+    let damageCooldown = 0;
+
+    const STARTING_LIVES = 3;
+    const DAMAGE_COOLDOWN_FRAMES = 90;
 
     const player = {
       x: WIDTH / 2,
@@ -183,6 +187,7 @@
 
     function drawText(text, x, y, size, color, align = "left", glow = false) {
       ctx.save();
+
       ctx.font = `bold ${size}px Arial`;
       ctx.fillStyle = color;
       ctx.textAlign = align;
@@ -193,6 +198,7 @@
       }
 
       ctx.fillText(text, x, y);
+
       ctx.restore();
     }
 
@@ -223,7 +229,7 @@
       startMusic();
 
       score = 0;
-      lives = 3;
+      lives = STARTING_LIVES;
       level = 1;
 
       bullets = [];
@@ -233,10 +239,29 @@
 
       enemySpawnTimer = 0;
       shootCooldown = 0;
+      damageCooldown = 0;
 
       player.x = WIDTH / 2;
 
       gameState = "playing";
+    }
+
+    function loseLife(reasonX, reasonY) {
+      if (damageCooldown > 0 || gameState !== "playing") {
+        return;
+      }
+
+      lives--;
+      damageCooldown = DAMAGE_COOLDOWN_FRAMES;
+
+      addParticles(reasonX, reasonY, COLORS.red);
+      addFloatingText("-1 LIFE", reasonX, reasonY - 30, COLORS.red);
+      playSound("hit");
+
+      if (lives <= 0) {
+        lives = 0;
+        endGame();
+      }
     }
 
     function shootBullet() {
@@ -257,14 +282,14 @@
     }
 
     function spawnEnemy() {
-      const size = 42 + Math.random() * 20;
+      const size = 38 + Math.random() * 18;
 
       enemies.push({
         x: size + Math.random() * (WIDTH - size * 2),
-        y: -size,
+        y: -size - 20,
         w: size,
         h: size,
-        speed: 2.2 + Math.random() * 1.5 + level * 0.18,
+        speed: 1.7 + Math.random() * 1.1 + (level - 1) * 0.12,
         hp: level >= 5 ? 2 : 1,
         points: 100 + level * 20
       });
@@ -283,15 +308,22 @@
         shootBullet();
       }
 
-      player.x = Math.max(player.w / 2, Math.min(WIDTH - player.w / 2, player.x));
+      player.x = Math.max(
+        player.w / 2,
+        Math.min(WIDTH - player.w / 2, player.x)
+      );
 
       if (shootCooldown > 0) {
         shootCooldown--;
       }
 
+      if (damageCooldown > 0) {
+        damageCooldown--;
+      }
+
       enemySpawnTimer++;
 
-      const enemyDelay = Math.max(24, 68 - level * 4);
+      const enemyDelay = Math.max(34, 82 - level * 3);
 
       if (enemySpawnTimer >= enemyDelay) {
         spawnEnemy();
@@ -311,37 +343,35 @@
 
         enemy.y += enemy.speed;
 
-        if (enemy.y > HEIGHT + 60) {
+        if (enemy.y > HEIGHT + 80) {
           enemies.splice(i, 1);
-          lives--;
-
-          addFloatingText("-1 LIFE", WIDTH - 90, 110, COLORS.red);
-          playSound("hit");
-
-          if (lives <= 0) {
-            endGame();
-          }
-
+          loseLife(WIDTH - 90, 115);
           continue;
         }
 
+        const playerHitbox = {
+          x: player.x - player.w * 0.32,
+          y: player.y - player.h * 0.32,
+          w: player.w * 0.64,
+          h: player.h * 0.64
+        };
+
+        const enemyHitbox = {
+          x: enemy.x + enemy.w * 0.15,
+          y: enemy.y + enemy.h * 0.15,
+          w: enemy.w * 0.7,
+          h: enemy.h * 0.7
+        };
+
         const enemyHitPlayer =
-          enemy.x < player.x + player.w / 2 &&
-          enemy.x + enemy.w > player.x - player.w / 2 &&
-          enemy.y < player.y + player.h / 2 &&
-          enemy.y + enemy.h > player.y - player.h / 2;
+          enemyHitbox.x < playerHitbox.x + playerHitbox.w &&
+          enemyHitbox.x + enemyHitbox.w > playerHitbox.x &&
+          enemyHitbox.y < playerHitbox.y + playerHitbox.h &&
+          enemyHitbox.y + enemyHitbox.h > playerHitbox.y;
 
         if (enemyHitPlayer) {
           enemies.splice(i, 1);
-          lives--;
-          addParticles(player.x, player.y, COLORS.red);
-          addFloatingText("-1 LIFE", player.x, player.y - 40, COLORS.red);
-          playSound("hit");
-
-          if (lives <= 0) {
-            endGame();
-          }
-
+          loseLife(player.x, player.y);
           continue;
         }
 
@@ -360,8 +390,20 @@
 
             if (enemy.hp <= 0) {
               score += enemy.points;
-              addParticles(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2, COLORS.orange);
-              addFloatingText("+" + enemy.points, enemy.x + enemy.w / 2, enemy.y, COLORS.yellow);
+
+              addParticles(
+                enemy.x + enemy.w / 2,
+                enemy.y + enemy.h / 2,
+                COLORS.orange
+              );
+
+              addFloatingText(
+                "+" + enemy.points,
+                enemy.x + enemy.w / 2,
+                enemy.y,
+                COLORS.yellow
+              );
+
               enemies.splice(i, 1);
               playSound("explosion");
             } else {
@@ -373,7 +415,7 @@
         }
       }
 
-      level = Math.floor(score / 1000) + 1;
+      level = Math.floor(score / 1400) + 1;
 
       updateEffects();
     }
@@ -458,6 +500,12 @@
     }
 
     function drawPlayer() {
+      ctx.save();
+
+      if (damageCooldown > 0 && Math.floor(damageCooldown / 8) % 2 === 0) {
+        ctx.globalAlpha = 0.35;
+      }
+
       if (shipImageReady) {
         ctx.drawImage(
           images.ship,
@@ -467,7 +515,6 @@
           player.h
         );
       } else {
-        ctx.save();
         ctx.shadowColor = COLORS.cyan;
         ctx.shadowBlur = 25;
 
@@ -486,19 +533,25 @@
         ctx.lineTo(player.x, player.y + 55);
         ctx.lineTo(player.x + 12, player.y + 30);
         ctx.fill();
-
-        ctx.restore();
       }
+
+      ctx.restore();
     }
 
     function drawBullets() {
       for (const bullet of bullets) {
         ctx.save();
+
         ctx.shadowColor = COLORS.orange;
         ctx.shadowBlur = 20;
 
         ctx.fillStyle = COLORS.orange;
-        ctx.fillRect(bullet.x - bullet.w / 2, bullet.y, bullet.w, bullet.h);
+        ctx.fillRect(
+          bullet.x - bullet.w / 2,
+          bullet.y,
+          bullet.w,
+          bullet.h
+        );
 
         ctx.restore();
       }
@@ -516,7 +569,13 @@
 
           ctx.fillStyle = COLORS.red;
           ctx.beginPath();
-          ctx.arc(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2, enemy.w / 2, 0, Math.PI * 2);
+          ctx.arc(
+            enemy.x + enemy.w / 2,
+            enemy.y + enemy.h / 2,
+            enemy.w / 2,
+            0,
+            Math.PI * 2
+          );
           ctx.fill();
 
           ctx.fillStyle = COLORS.white;
@@ -557,6 +616,18 @@
       drawText("LEVEL: " + level, WIDTH / 2, 40, 22, COLORS.cyan, "center", true);
       drawText("LIVES: " + lives, WIDTH - 25, 40, 22, COLORS.red, "right", true);
       drawText("M: MUTE", WIDTH - 25, 72, 16, muted ? COLORS.red : COLORS.green, "right");
+
+      if (damageCooldown > 0) {
+        drawText(
+          "SHIELD ACTIVE",
+          WIDTH / 2,
+          78,
+          16,
+          COLORS.green,
+          "center",
+          true
+        );
+      }
     }
 
     function drawMenu() {
@@ -564,7 +635,8 @@
       drawText("Destroy enemy ships before they reach you.", WIDTH / 2, 265, 25, COLORS.white, "center");
       drawText("Move: ← → or A / D", WIDTH / 2, 345, 24, COLORS.cyan, "center");
       drawText("Shoot: SPACE", WIDTH / 2, 385, 24, COLORS.cyan, "center");
-      drawText("Press SPACE to Start", WIDTH / 2, 490, 34, COLORS.yellow, "center", true);
+      drawText("You have 3 lives each round.", WIDTH / 2, 430, 22, COLORS.green, "center");
+      drawText("Press SPACE to Start", WIDTH / 2, 515, 34, COLORS.yellow, "center", true);
     }
 
     function drawGameOver() {
