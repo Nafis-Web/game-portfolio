@@ -2,805 +2,946 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Gem Gem</title>
 
   <style>
-    *{
-      margin:0;
-      padding:0;
-      box-sizing:border-box;
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
     }
 
-    body{
-      min-height:100vh;
-      overflow:hidden;
-      font-family:Arial,sans-serif;
-      background:
-        radial-gradient(circle at top,#2a1066,#080d24 60%,#04060f);
-      color:white;
+    body {
+      min-height: 100vh;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+      background: radial-gradient(circle at top, #27105a, #080d24 60%, #050712);
+      color: white;
     }
 
-    .game-wrap{
-      width:100vw;
-      height:100vh;
-      display:flex;
-      justify-content:center;
-      align-items:center;
+    .game-wrap {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
     }
 
-    canvas{
-      width:min(100vw,1280px);
-      height:auto;
-      max-height:100vh;
-      display:block;
+    canvas {
+      width: min(100vw, 1280px);
+      height: auto;
+      max-height: 100vh;
+      display: block;
     }
   </style>
 </head>
 
 <body>
+  <div class="game-wrap">
+    <canvas id="gameCanvas" width="1280" height="820"></canvas>
+  </div>
 
-<div class="game-wrap">
-  <canvas id="gameCanvas" width="1280" height="820"></canvas>
-</div>
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
 
-<script>
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
+    const WINDOW_WIDTH = 1280;
+    const WINDOW_HEIGHT = 820;
 
-const WINDOW_WIDTH = 1280;
-const WINDOW_HEIGHT = 820;
+    const BOARD_WIDTH = 8;
+    const BOARD_HEIGHT = 8;
+    const GEM_SIZE = 56;
+    const EMPTY_SPACE = -1;
 
-const BOARD_WIDTH = 8;
-const BOARD_HEIGHT = 8;
-const GEM_SIZE = 56;
+    const XMARGIN = 92;
+    const YMARGIN = 205;
 
-const EMPTY_SPACE = -1;
+    const POINTS_PER_GEM = 10;
 
-const XMARGIN = 92;
-const YMARGIN = 205;
+    let DEDUCT_SPEED = 1;
+    let DEDUCT_INTERVAL = 1000;
+    let difficulty = "Medium";
 
-const POINTS_PER_GEM = 10;
+    let currentScore = 0;
+    let firstSelectedGem = null;
+    let showAboutPanel = false;
 
-let currentScore = 0;
-let firstSelectedGem = null;
+    let musicOn = true;
+    let sfxOn = true;
 
-let DEDUCT_SPEED = 1;
-let DEDUCT_INTERVAL = 1000;
-let difficulty = "Medium";
+    let lastDeductTime = Date.now();
+    let board = [];
 
-let musicOn = true;
-let sfxOn = true;
+    const gemImageNames = [
+      "block_air_jelly.png",
+      "block_arthropoda_jelly.png",
+      "block_demon_jelly.png",
+      "block_earth_jelly.png",
+      "block_fire_jelly.png",
+      "block_flash_jelly.png",
+      "block_forest_jelly.png",
+      "block_ice_jelly.png",
+      "block_lindworm_jelly.png",
+      "block_spirit_jelly.png",
+      "block_water_jelly.png"
+    ];
 
-let showAboutPanel = false;
+    const gemImages = [];
 
-let lastDeductTime = Date.now();
+    const sounds = {
+      swap: new Audio("./audio/swap.mp3"),
+      badSwap: new Audio("./audio/bad_swap.mp3"),
+      pop: new Audio("./audio/pop.mp3"),
+      background: new Audio("./audio/background.mp3")
+    };
 
-let board = [];
+    sounds.background.loop = true;
+    sounds.background.volume = 0.25;
 
-const gemImageNames = [
-  "block_air_jelly.png",
-  "block_arthropoda_jelly.png",
-  "block_demon_jelly.png",
-  "block_earth_jelly.png",
-  "block_fire_jelly.png",
-  "block_flash_jelly.png",
-  "block_forest_jelly.png",
-  "block_ice_jelly.png",
-  "block_lindworm_jelly.png",
-  "block_spirit_jelly.png",
-  "block_water_jelly.png"
-];
+    const rects = {
+      musicToggle: { x: 1095, y: 282, w: 54, h: 30 },
+      sfxToggle: { x: 1095, y: 363, w: 54, h: 30 },
 
-const gemImages = [];
+      deductionMinus: { x: 795, y: 510, w: 40, h: 33 },
+      deductionValue: { x: 850, y: 510, w: 82, h: 33 },
+      deductionPlus: { x: 947, y: 510, w: 40, h: 33 },
 
-const sounds = {
-  swap: new Audio("./audio/swap.mp3"),
-  badSwap: new Audio("./audio/bad_swap.mp3"),
-  pop: new Audio("./audio/pop.mp3"),
-  background: new Audio("./audio/background.mp3")
-};
+      easy: { x: 760, y: 590, w: 95, h: 35 },
+      medium: { x: 875, y: 590, w: 105, h: 35 },
+      hard: { x: 1000, y: 590, w: 95, h: 35 },
 
-sounds.background.loop = true;
-sounds.background.volume = 0.25;
+      reset: { x: 1018, y: 640, w: 118, h: 46 },
+      mainMenu: { x: 728, y: 695, w: 160, h: 48 },
+      about: { x: 905, y: 695, w: 160, h: 48 }
+    };
 
-const rects = {
-  musicToggle: { x: 1095, y: 282, w: 54, h: 30 },
-  sfxToggle: { x: 1095, y: 363, w: 54, h: 30 },
+    function roundedRect(x, y, w, h, r, fill, stroke = null, lineWidth = 2) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
 
-  deductionMinus: { x: 795, y: 510, w: 40, h: 33 },
-  deductionPlus: { x: 947, y: 510, w: 40, h: 33 },
+      if (fill) {
+        ctx.fillStyle = fill;
+        ctx.fill();
+      }
 
-  easy: { x: 760, y: 590, w: 95, h: 35 },
-  medium: { x: 875, y: 590, w: 105, h: 35 },
-  hard: { x: 1000, y: 590, w: 95, h: 35 },
-
-  reset: { x: 1018, y: 640, w: 118, h: 46 },
-  about: { x: 905, y: 695, w: 160, h: 48 }
-};
-
-function roundedRect(x,y,w,h,r,fill,stroke=null,lineWidth=2){
-  ctx.beginPath();
-  ctx.moveTo(x+r,y);
-  ctx.lineTo(x+w-r,y);
-  ctx.quadraticCurveTo(x+w,y,x+w,y+r);
-  ctx.lineTo(x+w,y+h-r);
-  ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
-  ctx.lineTo(x+r,y+h);
-  ctx.quadraticCurveTo(x,y+h,x,y+h-r);
-  ctx.lineTo(x,y+r);
-  ctx.quadraticCurveTo(x,y,x+r,y);
-  ctx.closePath();
-
-  if(fill){
-    ctx.fillStyle = fill;
-    ctx.fill();
-  }
-
-  if(stroke){
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = lineWidth;
-    ctx.stroke();
-  }
-}
-
-function drawText(text,x,y,size,color,align="center"){
-  ctx.font = `bold ${size}px Arial`;
-  ctx.fillStyle = color;
-  ctx.textAlign = align;
-  ctx.textBaseline = "middle";
-  ctx.fillText(text,x,y);
-}
-
-function pointInRect(pos,r){
-  return (
-    pos.x >= r.x &&
-    pos.x <= r.x + r.w &&
-    pos.y >= r.y &&
-    pos.y <= r.y + r.h
-  );
-}
-
-function applyDifficulty(){
-  if(difficulty === "Easy") DEDUCT_INTERVAL = 1500;
-  if(difficulty === "Medium") DEDUCT_INTERVAL = 1000;
-  if(difficulty === "Hard") DEDUCT_INTERVAL = 650;
-}
-
-function randomGem(){
-  return Math.floor(Math.random() * gemImages.length);
-}
-
-function hasMatchAt(testBoard,x,y){
-  const gem = testBoard[x][y];
-
-  if(gem === EMPTY_SPACE) return false;
-
-  if(
-    x >= 2 &&
-    testBoard[x-1][y] === gem &&
-    testBoard[x-2][y] === gem
-  ){
-    return true;
-  }
-
-  if(
-    y >= 2 &&
-    testBoard[x][y-1] === gem &&
-    testBoard[x][y-2] === gem
-  ){
-    return true;
-  }
-
-  return false;
-}
-
-function createBoard(){
-  const newBoard = [];
-
-  for(let x=0;x<BOARD_WIDTH;x++){
-    newBoard[x] = [];
-
-    for(let y=0;y<BOARD_HEIGHT;y++){
-      newBoard[x][y] = randomGem();
-
-      while(hasMatchAt(newBoard,x,y)){
-        newBoard[x][y] = randomGem();
+      if (stroke) {
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = lineWidth;
+        ctx.stroke();
       }
     }
-  }
 
-  return newBoard;
-}
-
-function swapData(testBoard,a,b){
-  const temp = testBoard[a.x][a.y];
-  testBoard[a.x][a.y] = testBoard[b.x][b.y];
-  testBoard[b.x][b.y] = temp;
-}
-
-function findMatchingGems(testBoard){
-  const matches = [];
-  const seen = new Set();
-
-  function add(x,y){
-    const key = `${x},${y}`;
-
-    if(!seen.has(key)){
-      seen.add(key);
-      matches.push({x,y});
+    function drawText(text, x, y, size, color, align = "center", bold = true) {
+      ctx.font = `${bold ? "bold" : "normal"} ${size}px Arial`;
+      ctx.fillStyle = color;
+      ctx.textAlign = align;
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, x, y);
     }
-  }
 
-  for(let x=0;x<BOARD_WIDTH-2;x++){
-    for(let y=0;y<BOARD_HEIGHT;y++){
+    function pointInRect(pos, r) {
+      return (
+        pos.x >= r.x &&
+        pos.x <= r.x + r.w &&
+        pos.y >= r.y &&
+        pos.y <= r.y + r.h
+      );
+    }
+
+    function applyDifficulty() {
+      if (difficulty === "Easy") {
+        DEDUCT_INTERVAL = 1500;
+      }
+
+      if (difficulty === "Medium") {
+        DEDUCT_INTERVAL = 1000;
+      }
+
+      if (difficulty === "Hard") {
+        DEDUCT_INTERVAL = 650;
+      }
+    }
+
+    function randomGem() {
+      return Math.floor(Math.random() * gemImages.length);
+    }
+
+    function hasMatchAt(testBoard, x, y) {
       const gem = testBoard[x][y];
 
-      if(
-        gem !== EMPTY_SPACE &&
-        testBoard[x+1][y] === gem &&
-        testBoard[x+2][y] === gem
-      ){
-        add(x,y);
-        add(x+1,y);
-        add(x+2,y);
+      if (gem === EMPTY_SPACE) {
+        return false;
       }
-    }
-  }
 
-  for(let x=0;x<BOARD_WIDTH;x++){
-    for(let y=0;y<BOARD_HEIGHT-2;y++){
-      const gem = testBoard[x][y];
-
-      if(
-        gem !== EMPTY_SPACE &&
-        testBoard[x][y+1] === gem &&
-        testBoard[x][y+2] === gem
-      ){
-        add(x,y);
-        add(x,y+1);
-        add(x,y+2);
+      if (
+        x >= 2 &&
+        testBoard[x - 1][y] === gem &&
+        testBoard[x - 2][y] === gem
+      ) {
+        return true;
       }
+
+      if (
+        y >= 2 &&
+        testBoard[x][y - 1] === gem &&
+        testBoard[x][y - 2] === gem
+      ) {
+        return true;
+      }
+
+      return false;
     }
-  }
 
-  return matches;
-}
+    function createBoard() {
+      const newBoard = [];
 
-function canMakeMove(testBoard){
-  for(let x=0;x<BOARD_WIDTH;x++){
-    for(let y=0;y<BOARD_HEIGHT;y++){
+      for (let x = 0; x < BOARD_WIDTH; x++) {
+        newBoard[x] = [];
 
-      if(x < BOARD_WIDTH-1){
-        swapData(testBoard,{x,y},{x:x+1,y});
+        for (let y = 0; y < BOARD_HEIGHT; y++) {
+          newBoard[x][y] = randomGem();
 
-        if(findMatchingGems(testBoard).length > 0){
-          swapData(testBoard,{x,y},{x:x+1,y});
-          return true;
+          while (hasMatchAt(newBoard, x, y)) {
+            newBoard[x][y] = randomGem();
+          }
+        }
+      }
+
+      return newBoard;
+    }
+
+    function swapData(testBoard, a, b) {
+      const temp = testBoard[a.x][a.y];
+      testBoard[a.x][a.y] = testBoard[b.x][b.y];
+      testBoard[b.x][b.y] = temp;
+    }
+
+    function findMatchingGems(testBoard) {
+      const matches = [];
+      const seen = new Set();
+
+      function add(x, y) {
+        const key = `${x},${y}`;
+
+        if (!seen.has(key)) {
+          seen.add(key);
+          matches.push({ x, y });
+        }
+      }
+
+      for (let x = 0; x < BOARD_WIDTH - 2; x++) {
+        for (let y = 0; y < BOARD_HEIGHT; y++) {
+          const gem = testBoard[x][y];
+
+          if (
+            gem !== EMPTY_SPACE &&
+            testBoard[x + 1][y] === gem &&
+            testBoard[x + 2][y] === gem
+          ) {
+            add(x, y);
+            add(x + 1, y);
+            add(x + 2, y);
+          }
+        }
+      }
+
+      for (let x = 0; x < BOARD_WIDTH; x++) {
+        for (let y = 0; y < BOARD_HEIGHT - 2; y++) {
+          const gem = testBoard[x][y];
+
+          if (
+            gem !== EMPTY_SPACE &&
+            testBoard[x][y + 1] === gem &&
+            testBoard[x][y + 2] === gem
+          ) {
+            add(x, y);
+            add(x, y + 1);
+            add(x, y + 2);
+          }
+        }
+      }
+
+      return matches;
+    }
+
+    function canMakeMove(testBoard) {
+      for (let x = 0; x < BOARD_WIDTH; x++) {
+        for (let y = 0; y < BOARD_HEIGHT; y++) {
+          if (x < BOARD_WIDTH - 1) {
+            swapData(testBoard, { x, y }, { x: x + 1, y });
+
+            if (findMatchingGems(testBoard).length > 0) {
+              swapData(testBoard, { x, y }, { x: x + 1, y });
+              return true;
+            }
+
+            swapData(testBoard, { x, y }, { x: x + 1, y });
+          }
+
+          if (y < BOARD_HEIGHT - 1) {
+            swapData(testBoard, { x, y }, { x, y: y + 1 });
+
+            if (findMatchingGems(testBoard).length > 0) {
+              swapData(testBoard, { x, y }, { x, y: y + 1 });
+              return true;
+            }
+
+            swapData(testBoard, { x, y }, { x, y: y + 1 });
+          }
+        }
+      }
+
+      return false;
+    }
+
+    function createNewGame() {
+      let newBoard = createBoard();
+
+      while (!canMakeMove(newBoard)) {
+        newBoard = createBoard();
+      }
+
+      return newBoard;
+    }
+
+    function removeMatches(matches) {
+      matches.forEach(gem => {
+        board[gem.x][gem.y] = EMPTY_SPACE;
+      });
+    }
+
+    function pullDownGems() {
+      for (let x = 0; x < BOARD_WIDTH; x++) {
+        const gems = [];
+
+        for (let y = 0; y < BOARD_HEIGHT; y++) {
+          if (board[x][y] !== EMPTY_SPACE) {
+            gems.push(board[x][y]);
+          }
         }
 
-        swapData(testBoard,{x,y},{x:x+1,y});
-      }
+        const emptyCount = BOARD_HEIGHT - gems.length;
+        const newColumn = [];
 
-      if(y < BOARD_HEIGHT-1){
-        swapData(testBoard,{x,y},{x,y:y+1});
-
-        if(findMatchingGems(testBoard).length > 0){
-          swapData(testBoard,{x,y},{x,y:y+1});
-          return true;
+        for (let i = 0; i < emptyCount; i++) {
+          newColumn.push(EMPTY_SPACE);
         }
 
-        swapData(testBoard,{x,y},{x,y:y+1});
-      }
-    }
-  }
+        gems.forEach(gem => {
+          newColumn.push(gem);
+        });
 
-  return false;
-}
-
-function createNewGame(){
-  let newBoard = createBoard();
-
-  while(!canMakeMove(newBoard)){
-    newBoard = createBoard();
-  }
-
-  return newBoard;
-}
-
-function removeMatches(matches){
-  matches.forEach(gem=>{
-    board[gem.x][gem.y] = EMPTY_SPACE;
-  });
-}
-
-function pullDownGems(){
-  for(let x=0;x<BOARD_WIDTH;x++){
-    const gems = [];
-
-    for(let y=0;y<BOARD_HEIGHT;y++){
-      if(board[x][y] !== EMPTY_SPACE){
-        gems.push(board[x][y]);
+        for (let y = 0; y < BOARD_HEIGHT; y++) {
+          board[x][y] = newColumn[y];
+        }
       }
     }
 
-    const emptyCount = BOARD_HEIGHT - gems.length;
-    const newColumn = [];
-
-    for(let i=0;i<emptyCount;i++){
-      newColumn.push(EMPTY_SPACE);
-    }
-
-    gems.forEach(gem=>newColumn.push(gem));
-
-    for(let y=0;y<BOARD_HEIGHT;y++){
-      board[x][y] = newColumn[y];
-    }
-  }
-}
-
-function refillBoard(){
-  for(let x=0;x<BOARD_WIDTH;x++){
-    for(let y=0;y<BOARD_HEIGHT;y++){
-      if(board[x][y] === EMPTY_SPACE){
-        board[x][y] = randomGem();
+    function refillBoard() {
+      for (let x = 0; x < BOARD_WIDTH; x++) {
+        for (let y = 0; y < BOARD_HEIGHT; y++) {
+          if (board[x][y] === EMPTY_SPACE) {
+            board[x][y] = randomGem();
+          }
+        }
       }
     }
-  }
-}
 
-function playSound(sound){
-  if(!sfxOn) return;
+    function playSound(sound) {
+      if (!sfxOn) {
+        return;
+      }
 
-  sound.currentTime = 0;
-  sound.play().catch(()=>{});
-}
+      sound.currentTime = 0;
+      sound.play().catch(() => {});
+    }
 
-function resolveMatches(){
-  let matches = findMatchingGems(board);
+    function resolveMatches() {
+      let matches = findMatchingGems(board);
 
-  while(matches.length > 0){
-    currentScore += matches.length * POINTS_PER_GEM;
+      while (matches.length > 0) {
+        currentScore += matches.length * POINTS_PER_GEM;
 
-    playSound(sounds.pop);
+        playSound(sounds.pop);
 
-    removeMatches(matches);
+        removeMatches(matches);
+        pullDownGems();
+        refillBoard();
 
-    pullDownGems();
+        matches = findMatchingGems(board);
+      }
 
-    refillBoard();
-
-    matches = findMatchingGems(board);
-  }
-
-  if(!canMakeMove(board)){
-    board = createNewGame();
-  }
-}
-
-function areAdjacent(a,b){
-  return (
-    (Math.abs(a.x-b.x)===1 && a.y===b.y) ||
-    (Math.abs(a.y-b.y)===1 && a.x===b.x)
-  );
-}
-
-function getClickedGem(pos){
-  for(let x=0;x<BOARD_WIDTH;x++){
-    for(let y=0;y<BOARD_HEIGHT;y++){
-
-      const gx = XMARGIN + x * GEM_SIZE;
-      const gy = YMARGIN + y * GEM_SIZE;
-
-      if(
-        pos.x >= gx &&
-        pos.x <= gx + GEM_SIZE &&
-        pos.y >= gy &&
-        pos.y <= gy + GEM_SIZE
-      ){
-        return {x,y};
+      if (!canMakeMove(board)) {
+        board = createNewGame();
       }
     }
-  }
 
-  return null;
-}
+    function areAdjacent(a, b) {
+      return (
+        (Math.abs(a.x - b.x) === 1 && a.y === b.y) ||
+        (Math.abs(a.y - b.y) === 1 && a.x === b.x)
+      );
+    }
 
-function drawBackground(){
-  ctx.fillStyle = "#081026";
-  ctx.fillRect(0,0,WINDOW_WIDTH,WINDOW_HEIGHT);
-}
+    function getClickedGem(pos) {
+      for (let x = 0; x < BOARD_WIDTH; x++) {
+        for (let y = 0; y < BOARD_HEIGHT; y++) {
+          const gx = XMARGIN + x * GEM_SIZE;
+          const gy = YMARGIN + y * GEM_SIZE;
 
-function drawTitle(){
-  drawText("GEM GEM",640,70,62,"#ffd84d");
-  drawText(`Score: ${currentScore}`,640,126,30,"#50ffa0");
-}
+          if (
+            pos.x >= gx &&
+            pos.x <= gx + GEM_SIZE &&
+            pos.y >= gy &&
+            pos.y <= gy + GEM_SIZE
+          ) {
+            return { x, y };
+          }
+        }
+      }
 
-function drawBoardBorder(){
-  roundedRect(
-    70,
-    183,
-    492,
-    492,
-    30,
-    "rgba(12,24,70,0.82)",
-    "#50dcff",
-    4
-  );
-}
+      return null;
+    }
 
-function drawBoard(){
-  for(let x=0;x<BOARD_WIDTH;x++){
-    for(let y=0;y<BOARD_HEIGHT;y++){
+    function drawBackground() {
+      ctx.fillStyle = "#0a102a";
+      ctx.fillRect(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
 
-      const gemIndex = board[x][y];
+      const gradient = ctx.createRadialGradient(640, 80, 20, 640, 80, 360);
+      gradient.addColorStop(0, "rgba(150, 70, 255, 0.45)");
+      gradient.addColorStop(1, "rgba(10, 16, 42, 0)");
 
-      const px = XMARGIN + x * GEM_SIZE;
-      const py = YMARGIN + y * GEM_SIZE;
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
 
-      if(
-        gemIndex !== EMPTY_SPACE &&
-        gemImages[gemIndex]
-      ){
-        ctx.drawImage(
-          gemImages[gemIndex],
-          px,
-          py,
-          GEM_SIZE,
-          GEM_SIZE
+      for (let i = 0; i < 45; i++) {
+        const x = (i * 97) % WINDOW_WIDTH;
+        const y = (i * 53) % WINDOW_HEIGHT;
+
+        ctx.fillStyle = "rgba(150, 90, 255, 0.85)";
+        ctx.beginPath();
+        ctx.arc(x, y, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      for (let i = 0; i < 18; i++) {
+        const x = (i * 143 + 35) % WINDOW_WIDTH;
+        const y = (i * 89 + 70) % WINDOW_HEIGHT;
+
+        ctx.fillStyle = "rgba(80, 220, 255, 0.8)";
+        ctx.beginPath();
+        ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawTitle() {
+      drawText("GEM GEM", 644, 78, 62, "#46146e");
+      drawText("GEM GEM", 640, 72, 62, "#ffcd46");
+
+      drawText(`Score: ${currentScore}`, 640, 126, 30, "#50ffa0");
+
+      ctx.strokeStyle = "#be50ff";
+      ctx.lineWidth = 3;
+
+      ctx.beginPath();
+      ctx.moveTo(410, 126);
+      ctx.lineTo(515, 126);
+      ctx.moveTo(765, 126);
+      ctx.lineTo(870, 126);
+      ctx.stroke();
+    }
+
+    function drawBoardBorder() {
+      roundedRect(
+        70,
+        183,
+        492,
+        492,
+        30,
+        "rgba(12, 24, 70, 0.82)",
+        "#50dcff",
+        4
+      );
+    }
+
+    function drawBoard() {
+      for (let x = 0; x < BOARD_WIDTH; x++) {
+        for (let y = 0; y < BOARD_HEIGHT; y++) {
+          const gemIndex = board[x][y];
+
+          const px = XMARGIN + x * GEM_SIZE;
+          const py = YMARGIN + y * GEM_SIZE;
+
+          if (gemIndex !== EMPTY_SPACE && gemImages[gemIndex]) {
+            ctx.drawImage(
+              gemImages[gemIndex],
+              px,
+              py,
+              GEM_SIZE,
+              GEM_SIZE
+            );
+          }
+
+          ctx.strokeStyle = "rgba(60, 150, 255, 0.8)";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(px, py, GEM_SIZE, GEM_SIZE);
+        }
+      }
+
+      if (firstSelectedGem) {
+        const px = XMARGIN + firstSelectedGem.x * GEM_SIZE;
+        const py = YMARGIN + firstSelectedGem.y * GEM_SIZE;
+
+        ctx.strokeStyle = "#be50ff";
+        ctx.lineWidth = 5;
+        ctx.strokeRect(px + 2, py + 2, GEM_SIZE - 4, GEM_SIZE - 4);
+      }
+    }
+
+    function drawToggle(r, enabled) {
+      roundedRect(
+        r.x,
+        r.y,
+        r.w,
+        r.h,
+        15,
+        enabled ? "#50ffa0" : "#5a5a6e"
+      );
+
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+
+      ctx.arc(
+        enabled ? r.x + r.w - 15 : r.x + 15,
+        r.y + r.h / 2,
+        12,
+        0,
+        Math.PI * 2
+      );
+
+      ctx.fill();
+    }
+
+    function drawSlider(x, y, w) {
+      ctx.strokeStyle = "#50ffa0";
+      ctx.lineWidth = 7;
+
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + w, y);
+      ctx.stroke();
+
+      ctx.fillStyle = "#96ff78";
+
+      ctx.beginPath();
+      ctx.arc(x + w, y, 9, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawButton(r, text, fill, border) {
+      roundedRect(r.x, r.y, r.w, r.h, 12, fill, border, 3);
+
+      drawText(
+        text,
+        r.x + r.w / 2,
+        r.y + r.h / 2,
+        20,
+        "#ffffff"
+      );
+    }
+
+    function drawDifficultyButton(r, text) {
+      const active = difficulty === text;
+
+      roundedRect(
+        r.x,
+        r.y,
+        r.w,
+        r.h,
+        10,
+        active ? "#50b478" : "#28325f",
+        active ? "#50ffa0" : "#6450aa",
+        2
+      );
+
+      drawText(
+        text,
+        r.x + r.w / 2,
+        r.y + r.h / 2,
+        14,
+        "#ffffff"
+      );
+    }
+
+    function drawSettingsPanel() {
+      roundedRect(
+        680,
+        205,
+        500,
+        555,
+        28,
+        "rgba(20, 17, 70, 0.88)",
+        "#dc5aff",
+        4
+      );
+
+      drawText("SETTINGS", 930, 247, 30, "#ffffff");
+
+      ctx.strokeStyle = "#be50ff";
+      ctx.lineWidth = 2;
+
+      ctx.beginPath();
+      ctx.moveTo(740, 258);
+      ctx.lineTo(1120, 258);
+      ctx.stroke();
+
+      const boxes = [
+        { x: 725, y: 278, w: 410, h: 66 },
+        { x: 725, y: 358, w: 410, h: 66 },
+        { x: 725, y: 438, w: 410, h: 105 },
+        { x: 725, y: 560, w: 410, h: 118 }
+      ];
+
+      boxes.forEach(box => {
+        roundedRect(
+          box.x,
+          box.y,
+          box.w,
+          box.h,
+          14,
+          "rgba(16, 20, 60, 0.95)",
+          "#5a2daa",
+          2
+        );
+      });
+
+      drawText("MUSIC", 760, 309, 20, "#ffffff", "left");
+      drawToggle(rects.musicToggle, musicOn);
+      drawSlider(760, 326, 300);
+
+      drawText("SOUND EFFECTS", 760, 389, 20, "#ffffff", "left");
+      drawToggle(rects.sfxToggle, sfxOn);
+      drawSlider(760, 406, 300);
+
+      drawText("TIMER DEDUCTION", 760, 469, 20, "#ffffff", "left");
+      drawText("Score loss per tick", 790, 499, 17, "#ffffff", "left");
+
+      roundedRect(
+        rects.deductionMinus.x,
+        rects.deductionMinus.y,
+        rects.deductionMinus.w,
+        rects.deductionMinus.h,
+        8,
+        "#285faa",
+        "#50dcff",
+        3
+      );
+
+      roundedRect(
+        rects.deductionValue.x,
+        rects.deductionValue.y,
+        rects.deductionValue.w,
+        rects.deductionValue.h,
+        8,
+        "#141946",
+        "#2a2d58",
+        2
+      );
+
+      roundedRect(
+        rects.deductionPlus.x,
+        rects.deductionPlus.y,
+        rects.deductionPlus.w,
+        rects.deductionPlus.h,
+        8,
+        "#285faa",
+        "#50dcff",
+        3
+      );
+
+      drawText("-", 815, 526, 24, "#ffffff");
+      drawText(String(DEDUCT_SPEED), 891, 526, 20, "#ffffff");
+      drawText("+", 967, 526, 24, "#ffffff");
+
+      drawText(
+        "Difficulty changes how fast score drains",
+        760,
+        552,
+        14,
+        "#50dcff",
+        "left"
+      );
+
+      drawText("DIFFICULTY", 760, 576, 20, "#ffffff", "left");
+
+      drawDifficultyButton(rects.easy, "Easy");
+      drawDifficultyButton(rects.medium, "Medium");
+      drawDifficultyButton(rects.hard, "Hard");
+
+      drawText("RESET GAME", 760, 655, 20, "#ffffff", "left");
+
+      drawButton(
+        rects.reset,
+        "RESET",
+        "#ff505a",
+        "#ffa0aa"
+      );
+
+      drawButton(
+        rects.mainMenu,
+        "MAIN MENU",
+        "#3791dc",
+        "#6ed2ff"
+      );
+
+      drawButton(
+        rects.about,
+        "ABOUT",
+        "#9637cd",
+        "#e682ff"
+      );
+
+      if (showAboutPanel) {
+        roundedRect(
+          330,
+          280,
+          620,
+          260,
+          22,
+          "rgba(20, 25, 65, 0.97)",
+          "#50dcff",
+          4
+        );
+
+        drawText("ABOUT GEM GEM", 640, 325, 30, "#ffe650");
+
+        drawText(
+          "Match 3 or more gems by swapping nearby pieces.",
+          640,
+          385,
+          17,
+          "#ffffff"
+        );
+
+        drawText(
+          "Use the side panel to change music, sound, timer, and difficulty.",
+          640,
+          425,
+          17,
+          "#ffffff"
+        );
+
+        drawText(
+          "Click ABOUT again to close this box.",
+          640,
+          475,
+          17,
+          "#50dcff"
         );
       }
-
-      ctx.strokeStyle = "rgba(60,150,255,0.8)";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(px,py,GEM_SIZE,GEM_SIZE);
     }
-  }
 
-  if(firstSelectedGem){
-    const px = XMARGIN + firstSelectedGem.x * GEM_SIZE;
-    const py = YMARGIN + firstSelectedGem.y * GEM_SIZE;
+    function draw() {
+      drawBackground();
+      drawTitle();
+      drawBoardBorder();
 
-    ctx.strokeStyle = "#be50ff";
-    ctx.lineWidth = 5;
+      if (board.length > 0) {
+        drawBoard();
+      }
 
-    ctx.strokeRect(
-      px+2,
-      py+2,
-      GEM_SIZE-4,
-      GEM_SIZE-4
-    );
-  }
-}
+      drawSettingsPanel();
+    }
 
-function drawToggle(r,enabled){
-  roundedRect(
-    r.x,
-    r.y,
-    r.w,
-    r.h,
-    15,
-    enabled ? "#50ffa0" : "#5a5a6e"
-  );
+    function updateTimer() {
+      const now = Date.now();
 
-  ctx.fillStyle = "#ffffff";
+      if (now - lastDeductTime >= DEDUCT_INTERVAL) {
+        if (currentScore > 0) {
+          currentScore -= DEDUCT_SPEED;
 
-  ctx.beginPath();
+          if (currentScore < 0) {
+            currentScore = 0;
+          }
+        }
 
-  ctx.arc(
-    enabled ? r.x+r.w-15 : r.x+15,
-    r.y+r.h/2,
-    12,
-    0,
-    Math.PI*2
-  );
-
-  ctx.fill();
-}
-
-function drawButton(r,text,fill,border){
-  roundedRect(r.x,r.y,r.w,r.h,12,fill,border,3);
-
-  drawText(
-    text,
-    r.x+r.w/2,
-    r.y+r.h/2,
-    18,
-    "#ffffff"
-  );
-}
-
-function drawSettingsPanel(){
-  roundedRect(
-    680,
-    205,
-    500,
-    555,
-    28,
-    "rgba(20,17,70,0.88)",
-    "#dc5aff",
-    4
-  );
-
-  drawText("SETTINGS",930,247,30,"#ffffff");
-
-  drawText("MUSIC",760,309,20,"#ffffff","left");
-  drawToggle(rects.musicToggle,musicOn);
-
-  drawText("SFX",760,389,20,"#ffffff","left");
-  drawToggle(rects.sfxToggle,sfxOn);
-
-  drawText("DEDUCTION",760,469,20,"#ffffff","left");
-
-  drawButton(rects.deductionMinus,"-","#285faa","#50dcff");
-  drawButton(rects.deductionPlus,"+","#285faa","#50dcff");
-
-  drawText(
-    DEDUCT_SPEED,
-    890,
-    526,
-    20,
-    "#ffffff"
-  );
-
-  drawText("DIFFICULTY",760,576,20,"#ffffff","left");
-
-  drawButton(rects.easy,"Easy",
-    difficulty==="Easy" ? "#50b478" : "#28325f",
-    "#50ffa0"
-  );
-
-  drawButton(rects.medium,"Medium",
-    difficulty==="Medium" ? "#50b478" : "#28325f",
-    "#50ffa0"
-  );
-
-  drawButton(rects.hard,"Hard",
-    difficulty==="Hard" ? "#50b478" : "#28325f",
-    "#50ffa0"
-  );
-
-  drawButton(rects.reset,"RESET","#ff505a","#ffffff");
-
-  drawButton(rects.about,"ABOUT","#9637cd","#ffffff");
-
-  if(showAboutPanel){
-    roundedRect(
-      330,
-      280,
-      620,
-      260,
-      22,
-      "rgba(20,25,65,0.97)",
-      "#50dcff",
-      4
-    );
-
-    drawText(
-      "ABOUT GEM GEM",
-      640,
-      325,
-      30,
-      "#ffe650"
-    );
-
-    drawText(
-      "Match 3 or more gems by swapping nearby pieces.",
-      640,
-      390,
-      18,
-      "#ffffff"
-    );
-
-    drawText(
-      "Click ABOUT again to close.",
-      640,
-      450,
-      18,
-      "#50dcff"
-    );
-  }
-}
-
-function draw(){
-  drawBackground();
-  drawTitle();
-  drawBoardBorder();
-
-  if(board.length > 0){
-    drawBoard();
-  }
-
-  drawSettingsPanel();
-}
-
-function updateTimer(){
-  const now = Date.now();
-
-  if(now - lastDeductTime >= DEDUCT_INTERVAL){
-
-    if(currentScore > 0){
-      currentScore -= DEDUCT_SPEED;
-
-      if(currentScore < 0){
-        currentScore = 0;
+        lastDeductTime = now;
       }
     }
 
-    lastDeductTime = now;
-  }
-}
-
-function gameLoop(){
-  updateTimer();
-  draw();
-
-  requestAnimationFrame(gameLoop);
-}
-
-function resetGame(){
-  board = createNewGame();
-
-  currentScore = 0;
-
-  firstSelectedGem = null;
-
-  lastDeductTime = Date.now();
-}
-
-function getMousePos(event){
-  const bounds = canvas.getBoundingClientRect();
-
-  return {
-    x:(event.clientX - bounds.left) * (canvas.width / bounds.width),
-    y:(event.clientY - bounds.top) * (canvas.height / bounds.height)
-  };
-}
-
-canvas.addEventListener("click",event=>{
-
-  if(musicOn){
-    sounds.background.play().catch(()=>{});
-  }
-
-  const pos = getMousePos(event);
-
-  if(pointInRect(pos,rects.musicToggle)){
-    musicOn = !musicOn;
-
-    if(musicOn){
-      sounds.background.play().catch(()=>{});
-    }else{
-      sounds.background.pause();
+    function gameLoop() {
+      updateTimer();
+      draw();
+      requestAnimationFrame(gameLoop);
     }
 
-    return;
-  }
+    function resetGame() {
+      board = createNewGame();
+      currentScore = 0;
+      firstSelectedGem = null;
+      showAboutPanel = false;
+      lastDeductTime = Date.now();
+    }
 
-  if(pointInRect(pos,rects.sfxToggle)){
-    sfxOn = !sfxOn;
-    return;
-  }
+    function getMousePos(event) {
+      const bounds = canvas.getBoundingClientRect();
 
-  if(pointInRect(pos,rects.deductionMinus)){
-    DEDUCT_SPEED = Math.max(0,DEDUCT_SPEED-1);
-    return;
-  }
+      return {
+        x: (event.clientX - bounds.left) * (canvas.width / bounds.width),
+        y: (event.clientY - bounds.top) * (canvas.height / bounds.height)
+      };
+    }
 
-  if(pointInRect(pos,rects.deductionPlus)){
-    DEDUCT_SPEED = Math.min(10,DEDUCT_SPEED+1);
-    return;
-  }
-
-  if(pointInRect(pos,rects.easy)){
-    difficulty = "Easy";
-    applyDifficulty();
-    return;
-  }
-
-  if(pointInRect(pos,rects.medium)){
-    difficulty = "Medium";
-    applyDifficulty();
-    return;
-  }
-
-  if(pointInRect(pos,rects.hard)){
-    difficulty = "Hard";
-    applyDifficulty();
-    return;
-  }
-
-  if(pointInRect(pos,rects.reset)){
-    resetGame();
-    return;
-  }
-
-  if(pointInRect(pos,rects.about)){
-    showAboutPanel = !showAboutPanel;
-    return;
-  }
-
-  const clickedGem = getClickedGem(pos);
-
-  if(!clickedGem){
-    firstSelectedGem = null;
-    return;
-  }
-
-  if(!firstSelectedGem){
-    firstSelectedGem = clickedGem;
-    return;
-  }
-
-  if(!areAdjacent(firstSelectedGem,clickedGem)){
-    firstSelectedGem = clickedGem;
-    return;
-  }
-
-  swapData(board,firstSelectedGem,clickedGem);
-
-  const matches = findMatchingGems(board);
-
-  if(matches.length === 0){
-    swapData(board,firstSelectedGem,clickedGem);
-
-    playSound(sounds.badSwap);
-  }else{
-    playSound(sounds.swap);
-
-    resolveMatches();
-  }
-
-  firstSelectedGem = null;
-});
-
-window.addEventListener("keydown",event=>{
-
-  if(event.key.toLowerCase() === "r"){
-    resetGame();
-  }
-
-  if(event.key === "Escape"){
-    showAboutPanel = false;
-  }
-});
-
-function loadImagesThenStart(){
-
-  let loaded = 0;
-
-  gemImageNames.forEach((name,index)=>{
-
-    const img = new Image();
-
-    img.onload = ()=>{
-
-      console.log("Loaded image:",img.src);
-
-      loaded++;
-
-      if(loaded === gemImageNames.length){
-
-        board = createNewGame();
-
-        gameLoop();
+    canvas.addEventListener("click", event => {
+      if (musicOn) {
+        sounds.background.play().catch(() => {});
       }
-    };
 
-    img.onerror = ()=>{
-      console.error("Missing image:",img.src);
-    };
+      const pos = getMousePos(event);
 
-    img.src = `./images/${name}`;
+      if (pointInRect(pos, rects.musicToggle)) {
+        musicOn = !musicOn;
 
-    gemImages[index] = img;
-  });
-}
+        if (musicOn) {
+          sounds.background.play().catch(() => {});
+        } else {
+          sounds.background.pause();
+        }
 
-applyDifficulty();
+        return;
+      }
 
-loadImagesThenStart();
-</script>
+      if (pointInRect(pos, rects.sfxToggle)) {
+        sfxOn = !sfxOn;
+        return;
+      }
 
+      if (pointInRect(pos, rects.deductionMinus)) {
+        DEDUCT_SPEED = Math.max(0, DEDUCT_SPEED - 1);
+        return;
+      }
+
+      if (pointInRect(pos, rects.deductionPlus)) {
+        DEDUCT_SPEED = Math.min(10, DEDUCT_SPEED + 1);
+        return;
+      }
+
+      if (pointInRect(pos, rects.easy)) {
+        difficulty = "Easy";
+        applyDifficulty();
+        lastDeductTime = Date.now();
+        return;
+      }
+
+      if (pointInRect(pos, rects.medium)) {
+        difficulty = "Medium";
+        applyDifficulty();
+        lastDeductTime = Date.now();
+        return;
+      }
+
+      if (pointInRect(pos, rects.hard)) {
+        difficulty = "Hard";
+        applyDifficulty();
+        lastDeductTime = Date.now();
+        return;
+      }
+
+      if (pointInRect(pos, rects.reset) || pointInRect(pos, rects.mainMenu)) {
+        resetGame();
+        return;
+      }
+
+      if (pointInRect(pos, rects.about)) {
+        showAboutPanel = !showAboutPanel;
+        return;
+      }
+
+      if (showAboutPanel) {
+        return;
+      }
+
+      const clickedGem = getClickedGem(pos);
+
+      if (!clickedGem) {
+        firstSelectedGem = null;
+        return;
+      }
+
+      if (!firstSelectedGem) {
+        firstSelectedGem = clickedGem;
+        return;
+      }
+
+      if (!areAdjacent(firstSelectedGem, clickedGem)) {
+        firstSelectedGem = clickedGem;
+        return;
+      }
+
+      swapData(board, firstSelectedGem, clickedGem);
+
+      const matches = findMatchingGems(board);
+
+      if (matches.length === 0) {
+        swapData(board, firstSelectedGem, clickedGem);
+        playSound(sounds.badSwap);
+      } else {
+        playSound(sounds.swap);
+        resolveMatches();
+      }
+
+      firstSelectedGem = null;
+    });
+
+    window.addEventListener("keydown", event => {
+      if (event.key.toLowerCase() === "r") {
+        resetGame();
+      }
+
+      if (event.key === "Escape") {
+        showAboutPanel = false;
+        firstSelectedGem = null;
+      }
+    });
+
+    function loadImagesThenStart() {
+      let loaded = 0;
+
+      gemImageNames.forEach((name, index) => {
+        const img = new Image();
+
+        img.onload = () => {
+          console.log("Loaded image:", img.src);
+          loaded++;
+
+          if (loaded === gemImageNames.length) {
+            board = createNewGame();
+            gameLoop();
+          }
+        };
+
+        img.onerror = () => {
+          console.error("Missing image:", img.src);
+        };
+
+        img.src = `./images/${name}`;
+        gemImages[index] = img;
+      });
+    }
+
+    applyDifficulty();
+    loadImagesThenStart();
+  </script>
 </body>
 </html>
