@@ -92,10 +92,10 @@
     const gemImages = [];
 
     const sounds = {
-      swap: new Audio("audio/swap.mp3"),
-      badSwap: new Audio("audio/bad_swap.mp3"),
-      pop: new Audio("audio/pop.mp3"),
-      background: new Audio("audio/background.mp3")
+      swap: new Audio("./audio/swap.mp3"),
+      badSwap: new Audio("./audio/bad_swap.mp3"),
+      pop: new Audio("./audio/pop.mp3"),
+      background: new Audio("./audio/background.mp3")
     };
 
     sounds.background.loop = true;
@@ -216,9 +216,11 @@
         for (let y = 0; y < BOARD_HEIGHT; y++) {
           const gem = testBoard[x][y];
 
-          if (gem !== EMPTY_SPACE &&
-              testBoard[x + 1][y] === gem &&
-              testBoard[x + 2][y] === gem) {
+          if (
+            gem !== EMPTY_SPACE &&
+            testBoard[x + 1][y] === gem &&
+            testBoard[x + 2][y] === gem
+          ) {
             add(x, y);
             add(x + 1, y);
             add(x + 2, y);
@@ -230,9 +232,11 @@
         for (let y = 0; y < BOARD_HEIGHT - 2; y++) {
           const gem = testBoard[x][y];
 
-          if (gem !== EMPTY_SPACE &&
-              testBoard[x][y + 1] === gem &&
-              testBoard[x][y + 2] === gem) {
+          if (
+            gem !== EMPTY_SPACE &&
+            testBoard[x][y + 1] === gem &&
+            testBoard[x][y + 2] === gem
+          ) {
             add(x, y);
             add(x, y + 1);
             add(x, y + 2);
@@ -241,6 +245,12 @@
       }
 
       return matches;
+    }
+
+    function swapData(testBoard, a, b) {
+      const temp = testBoard[a.x][a.y];
+      testBoard[a.x][a.y] = testBoard[b.x][b.y];
+      testBoard[b.x][b.y] = temp;
     }
 
     function canMakeMove(testBoard) {
@@ -281,12 +291,6 @@
       }
 
       return newBoard;
-    }
-
-    function swapData(testBoard, a, b) {
-      const temp = testBoard[a.x][a.y];
-      testBoard[a.x][a.y] = testBoard[b.x][b.y];
-      testBoard[b.x][b.y] = temp;
     }
 
     function removeMatches(matches) {
@@ -360,8 +364,12 @@
           const gx = XMARGIN + x * GEM_SIZE;
           const gy = YMARGIN + y * GEM_SIZE;
 
-          if (pos.x >= gx && pos.x <= gx + GEM_SIZE &&
-              pos.y >= gy && pos.y <= gy + GEM_SIZE) {
+          if (
+            pos.x >= gx &&
+            pos.x <= gx + GEM_SIZE &&
+            pos.y >= gy &&
+            pos.y <= gy + GEM_SIZE
+          ) {
             return { x, y };
           }
         }
@@ -372,8 +380,8 @@
 
     function areAdjacent(a, b) {
       return (
-        Math.abs(a.x - b.x) === 1 && a.y === b.y ||
-        Math.abs(a.y - b.y) === 1 && a.x === b.x
+        (Math.abs(a.x - b.x) === 1 && a.y === b.y) ||
+        (Math.abs(a.y - b.y) === 1 && a.x === b.x)
       );
     }
 
@@ -575,14 +583,18 @@
       drawText("GAME OVER", 640, 325, 64, "#ff505a");
       drawText(`Final Score: ${finalScore}`, 640, 405, 42, "#50ffa0");
       drawText("Press R to reset and play again", 640, 465, 17, "#ffffff");
-      drawText("Press ESC to return to the hub", 640, 502, 17, "#ffffff");
+      drawText("Press ESC to close panels", 640, 502, 17, "#ffffff");
     }
 
     function draw() {
       drawBackground();
       drawGameTitle();
       drawBoardBorder();
-      drawBoard();
+
+      if (board.length > 0) {
+        drawBoard();
+      }
+
       drawSettingsPanel();
       drawAboutPanel();
 
@@ -611,7 +623,9 @@
     }
 
     canvas.addEventListener("click", event => {
-      sounds.background.play().catch(() => {});
+      if (musicOn) {
+        sounds.background.play().catch(() => {});
+      }
 
       const pos = getMousePos(event);
 
@@ -688,7 +702,7 @@
       }
 
       if (!areAdjacent(firstSelectedGem, clickedGem)) {
-        firstSelectedGem = null;
+        firstSelectedGem = clickedGem;
         return;
       }
 
@@ -742,27 +756,75 @@
       requestAnimationFrame(gameLoop);
     }
 
-    function loadImagesThenStart() {
-      let loaded = 0;
+    function createFallbackImage(label) {
+      const fallback = document.createElement("canvas");
+      fallback.width = GEM_SIZE;
+      fallback.height = GEM_SIZE;
 
-      gemImageNames.forEach(name => {
+      const fctx = fallback.getContext("2d");
+
+      const gradient = fctx.createRadialGradient(
+        GEM_SIZE / 2,
+        GEM_SIZE / 2,
+        5,
+        GEM_SIZE / 2,
+        GEM_SIZE / 2,
+        GEM_SIZE / 2
+      );
+
+      gradient.addColorStop(0, "#ffffff");
+      gradient.addColorStop(0.45, "#ff4fd8");
+      gradient.addColorStop(1, "#6020ff");
+
+      fctx.fillStyle = gradient;
+      fctx.fillRect(0, 0, GEM_SIZE, GEM_SIZE);
+
+      fctx.strokeStyle = "#ffffff";
+      fctx.lineWidth = 3;
+      fctx.strokeRect(3, 3, GEM_SIZE - 6, GEM_SIZE - 6);
+
+      fctx.fillStyle = "#ffffff";
+      fctx.font = "bold 20px Arial";
+      fctx.textAlign = "center";
+      fctx.textBaseline = "middle";
+      fctx.fillText(label, GEM_SIZE / 2, GEM_SIZE / 2);
+
+      const img = new Image();
+      img.src = fallback.toDataURL();
+
+      return img;
+    }
+
+    function loadImagesThenStart() {
+      let finished = 0;
+
+      function checkDone() {
+        finished++;
+
+        if (finished === gemImageNames.length) {
+          board = createNewGame();
+          gameLoop();
+        }
+      }
+
+      gemImageNames.forEach((name, index) => {
         const img = new Image();
-        img.src = `images/${name}`;
 
         img.onload = () => {
-          loaded++;
-
-          if (loaded === gemImageNames.length) {
-            board = createNewGame();
-            gameLoop();
-          }
+          console.log("Loaded image:", img.src);
+          checkDone();
         };
 
         img.onerror = () => {
           console.error("Missing image:", img.src);
+
+          gemImages[index] = createFallbackImage("?");
+
+          checkDone();
         };
 
-        gemImages.push(img);
+        img.src = `./images/${name}`;
+        gemImages[index] = img;
       });
     }
 
