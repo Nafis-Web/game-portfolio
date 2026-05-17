@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ink Spill</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #080812;
+      font-family: Arial, sans-serif;
+      color: white;
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background:
+        radial-gradient(circle at 18% 55%, rgba(165, 85, 230, 0.18), transparent 32%),
+        radial-gradient(circle at 88% 70%, rgba(245, 145, 45, 0.18), transparent 32%),
+        linear-gradient(180deg, #080812 0%, #1c122a 100%);
+    }
+
+    .game-shell {
+      width: 100%;
+      height: 100%;
+      padding: 14px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      max-width: 900px;
+      max-height: 690px;
+      background: #12121e;
+      border: 3px solid rgba(210, 210, 230, 0.85);
+      border-radius: 20px;
+      box-shadow:
+        0 0 28px rgba(165, 85, 230, 0.32),
+        inset 0 0 35px rgba(245, 145, 45, 0.08);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="game-shell">
+    <canvas id="gameCanvas" width="640" height="480"></canvas>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const WIDTH = 640;
+    const HEIGHT = 480;
+    const FPS = 60;
+
+    const COLORS = [
+      [235, 60, 75],
+      [75, 215, 120],
+      [65, 145, 230],
+      [245, 225, 75],
+      [245, 145, 45],
+      [165, 85, 230]
+    ];
+
+    const COLOR_NAMES = [
+      "Red",
+      "Green",
+      "Blue",
+      "Yellow",
+      "Orange",
+      "Purple"
+    ];
+
+    const BG_TOP = [8, 8, 18];
+    const BG_BOTTOM = [28, 18, 42];
+
+    const WHITE = [255, 255, 255];
+    const SOFT_WHITE = [210, 210, 230];
+    const PANEL = [28, 24, 42];
+    const DARK_LINE = [12, 12, 22];
+    const PURPLE_LINE = [130, 80, 210];
+
+    let ROWS = 10;
+    let COLS = 10;
+    let CELL_SIZE = 30;
+
+    let difficulty = "Medium";
+
+    let GRID_WIDTH = COLS * CELL_SIZE;
+    let GRID_HEIGHT = ROWS * CELL_SIZE;
+
+    let GRID_X = 190;
+    let GRID_Y = 105;
+
+    const BUTTON_SIZE = 42;
+    const BUTTON_GAP = 16;
+    const PALETTE_Y = 410;
+
+    let TOTAL_PALETTE_WIDTH = COLORS.length * BUTTON_SIZE + (COLORS.length - 1) * BUTTON_GAP;
+    let PALETTE_X = GRID_X + Math.floor((GRID_WIDTH - TOTAL_PALETTE_WIDTH) / 2);
+
+    const resetButton = {
+      x: WIDTH - 110 - 25,
+      y: 25,
+      w: 110,
+      h: 38
+    };
+
+    const settingsButton = {
+      x: WIDTH - 110 - 25,
+      y: 25 + 38 + 12,
+      w: 110,
+      h: 38
+    };
+
+    const settingsModal = {
+      x: 115,
+      y: 55,
+      w: 410,
+      h: 390
+    };
+
+    const size10Button = { x: 155, y: 150, w: 115, h: 36 };
+    const size14Button = { x: 265, y: 150, w: 115, h: 36 };
+    const size30Button = { x: 375, y: 150, w: 115, h: 36 };
+
+    const easyButton = { x: 155, y: 245, w: 115, h: 36 };
+    const mediumButton = { x: 265, y: 245, w: 115, h: 36 };
+    const hardButton = { x: 375, y: 245, w: 115, h: 36 };
+
+    const closeSettingsButton = { x: 205, y: 345, w: 230, h: 38 };
+
+    let maxMoves = 20;
+    let movesLeft = maxMoves;
+
+    let settingsOpen = false;
+    let resettingBoard = false;
+    let resetStartTime = 0;
+    const RESET_DELAY = 2000;
+    let gameResult = "";
+
+    let flashActive = false;
+    let flashStartTime = 0;
+    const FLASH_DURATION = 600;
+
+    let board = [];
+    let paletteButtons = [];
+
+    let bestMoves = Number(localStorage.getItem("ink_spill_best_moves")) || null;
+
+    function rgb(color) {
+      return `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+    }
+
+    function rgba(color, alpha) {
+      return `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha})`;
+    }
+
+    function calculateMaxMoves() {
+      if (ROWS === 10) {
+        if (difficulty === "Easy") return 25;
+        if (difficulty === "Medium") return 20;
+        if (difficulty === "Hard") return 15;
+      }
+
+      if (ROWS === 14) {
+        if (difficulty === "Easy") return 35;
+        if (difficulty === "Medium") return 28;
+        if (difficulty === "Hard") return 22;
+      }
+
+      if (ROWS === 30) {
+        if (difficulty === "Easy") return 70;
+        if (difficulty === "Medium") return 55;
+        if (difficulty === "Hard") return 42;
+      }
+
+      return 20;
+    }
+
+    function rebuildLayout() {
+      GRID_WIDTH = COLS * CELL_SIZE;
+      GRID_HEIGHT = ROWS * CELL_SIZE;
+
+      GRID_X = 190;
+      GRID_Y = 105;
+
+      TOTAL_PALETTE_WIDTH = COLORS.length * BUTTON_SIZE + (COLORS.length - 1) * BUTTON_GAP;
+      PALETTE_X = GRID_X + Math.floor((GRID_WIDTH - TOTAL_PALETTE_WIDTH) / 2);
+
+      paletteButtons = [];
+
+      for (let i = 0; i < COLORS.length; i++) {
+        paletteButtons.push({
+          x: PALETTE_X + i * (BUTTON_SIZE + BUTTON_GAP),
+          y: PALETTE_Y,
+          w: BUTTON_SIZE,
+          h: BUTTON_SIZE
+        });
+      }
+    }
+
+    function createEmptyBoard() {
+      board = [];
+
+      for (let row = 0; row < ROWS; row++) {
+        const newRow = [];
+
+        for (let col = 0; col < COLS; col++) {
+          newRow.push(null);
+        }
+
+        board.push(newRow);
+      }
+    }
+
+    function generateBoard() {
+      for (let row = 0; row < ROWS; row++) {
+        for (let col = 0; col < COLS; col++) {
+          board[row][col] = Math.floor(Math.random() * COLORS.length);
+        }
+      }
+    }
+
+    function applyGameSettings() {
+      maxMoves = calculateMaxMoves();
+      movesLeft = maxMoves;
+      resettingBoard = false;
+      gameResult = "";
+      flashActive = false;
+
+      rebuildLayout();
+      createEmptyBoard();
+      generateBoard();
+    }
+
+    function setBoardSize(newSize) {
+      ROWS = newSize;
+      COLS = newSize;
+
+      if (newSize === 10) {
+        CELL_SIZE = 30;
+      } else if (newSize === 14) {
+        CELL_SIZE = 21;
+      } else if (newSize === 30) {
+        CELL_SIZE = 10;
+      }
+
+      applyGameSettings();
+      settingsOpen = false;
+    }
+
+    function setDifficulty(newDifficulty) {
+      difficulty = newDifficulty;
+      applyGameSettings();
+      settingsOpen = false;
+    }
+
+    function resetGameBoard() {
+      generateBoard();
+      movesLeft = maxMoves;
+      resettingBoard = false;
+      gameResult = "";
+      flashActive = false;
+    }
+
+    function getCurrentScore() {
+      return maxMoves - movesLeft;
+    }
+
+    function updateHighScore(movesUsed) {
+      if (bestMoves === null || movesUsed < bestMoves) {
+        bestMoves = movesUsed;
+        localStorage.setItem("ink_spill_best_moves", String(bestMoves));
+      }
+    }
+
+    function sameColor(a, b) {
+      return a === b;
+    }
+
+    function floodFill(startRow, startCol, oldColor, targetColor) {
+      if (sameColor(oldColor, targetColor)) return;
+
+      const stack = [[startRow, startCol]];
+
+      while (stack.length > 0) {
+        const [row, col] = stack.pop();
+
+        if (row < 0 || row >= ROWS || col < 0 || col >= COLS) continue;
+        if (board[row][col] !== oldColor) continue;
+
+        board[row][col] = targetColor;
+
+        stack.push([row - 1, col]);
+        stack.push([row + 1, col]);
+        stack.push([row, col - 1]);
+        stack.push([row, col + 1]);
+      }
+    }
+
+    function hasWon() {
+      const targetColor = board[0][0];
+
+      for (let row = 0; row < ROWS; row++) {
+        for (let col = 0; col < COLS; col++) {
+          if (board[row][col] !== targetColor) return false;
+        }
+      }
+
+      return true;
+    }
+
+    function hasLost() {
+      return movesLeft <= 0 && !hasWon();
+    }
+
+    function startFlash() {
+      flashActive = true;
+      flashStartTime = performance.now();
+    }
+
+    function startSoftReset(resultText) {
+      resettingBoard = true;
+      resetStartTime = performance.now();
+      gameResult = resultText;
+    }
+
+    function updateSoftReset() {
+      if (!resettingBoard) return;
+
+      if (performance.now() - resetStartTime >= RESET_DELAY) {
+        generateBoard();
+        movesLeft = maxMoves;
+        resettingBoard = false;
+        gameResult = "";
+      }
+    }
+
+    function rectContains(rect, pos) {
+      return (
+        pos.x >= rect.x &&
+        pos.x <= rect.x + rect.w &&
+        pos.y >= rect.y &&
+        pos.y <= rect.y + rect.h
+      );
+    }
+
+    function getPaletteIndex(pos) {
+      for (let i = 0; i < paletteButtons.length; i++) {
+        if (rectContains(paletteButtons[i], pos)) {
+          return i;
+        }
+      }
+
+      return -1;
+    }
+
+    function checkPaletteClick(pos) {
+      const index = getPaletteIndex(pos);
+
+      if (index === -1) return;
+
+      const selectedColor = index;
+      const oldColor = board[0][0];
+
+      if (selectedColor === oldColor) return;
+      if (movesLeft <= 0) return;
+
+      floodFill(0, 0, oldColor, selectedColor);
+      movesLeft--;
+
+      if (hasWon()) {
+        const movesUsed = getCurrentScore();
+        updateHighScore(movesUsed);
+        startFlash();
+        startSoftReset("VICTORY");
+      } else if (hasLost()) {
+        startSoftReset("GAME OVER");
+      }
+    }
+
+    function roundedRect(x, y, w, h, r, fill, stroke, lineWidth = 2) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+
+      if (fill) {
+        ctx.fillStyle = fill;
+        ctx.fill();
+      }
+
+      if (stroke) {
+        ctx.lineWidth = lineWidth;
+        ctx.strokeStyle = stroke;
+        ctx.stroke();
+      }
+    }
+
+    function drawText(text, size, color, x, y, align = "center", weight = "normal", baseline = "middle") {
+      ctx.fillStyle = color;
+      ctx.font = `${weight} ${size}px Arial`;
+      ctx.textAlign = align;
+      ctx.textBaseline = baseline;
+      ctx.fillText(text, x, y);
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+    }
+
+    function drawGradientBackground() {
+      const gradient = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+      gradient.addColorStop(0, rgb(BG_TOP));
+      gradient.addColorStop(1, rgb(BG_BOTTOM));
+
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    }
+
+    function drawInkSplatter(x, y, color) {
+      ctx.fillStyle = rgb(color);
+
+      ctx.beginPath();
+      ctx.arc(x, y, 8, 0, Math.PI * 2);
+      ctx.fill();
+
+      const dots = [
+        [x - 11, y - 6, 4],
+        [x + 11, y - 7, 5],
+        [x - 7, y + 12, 5],
+        [x + 8, y + 11, 3]
+      ];
+
+      for (const dot of dots) {
+        ctx.beginPath();
+        ctx.arc(dot[0], dot[1], dot[2], 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = rgb(color);
+
+      const lines = [
+        [x, y, x - 15, y - 13],
+        [x, y, x + 15, y - 13],
+        [x, y, x - 11, y + 17]
+      ];
+
+      for (const line of lines) {
+        ctx.beginPath();
+        ctx.moveTo(line[0], line[1]);
+        ctx.lineTo(line[2], line[3]);
+        ctx.stroke();
+      }
+    }
+
+    function drawBackgroundSplats() {
+      ctx.fillStyle = "rgba(120, 70, 170, 0.20)";
+
+      const splats = [
+        [35, 265, 25],
+        [65, 335, 38],
+        [80, 305, 14],
+        [570, 330, 35],
+        [600, 375, 46],
+        [545, 350, 15]
+      ];
+
+      for (const splat of splats) {
+        ctx.beginPath();
+        ctx.arc(splat[0], splat[1], splat[2], 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawTitle() {
+      drawInkSplatter(160, 58, COLORS[0]);
+      drawInkSplatter(480, 58, COLORS[5]);
+
+      drawText("INK SPILL", 44, "rgb(35,35,50)", WIDTH / 2 + 3, 58, "center", "900");
+      drawText("INK SPILL", 44, rgb(WHITE), WIDTH / 2, 55, "center", "900");
+    }
+
+    function drawButton(rect, label, borderColor, fontSize = 17) {
+      roundedRect(rect.x + 4, rect.y + 4, rect.w, rect.h, 14, "rgb(0,0,0)", null);
+      roundedRect(rect.x, rect.y, rect.w, rect.h, 14, rgb(PANEL), rgb(borderColor), 3);
+
+      drawText(label, fontSize, rgb(WHITE), rect.x + rect.w / 2, rect.y + rect.h / 2, "center", "900");
+    }
+
+    function drawResetButton() {
+      drawButton(resetButton, "RESET", COLORS[4], 17);
+    }
+
+    function drawSettingsButton() {
+      drawButton(settingsButton, "SETTINGS", COLORS[5], 14);
+    }
+
+    function drawMovesLeft() {
+      const panelW = 130;
+      const panelH = 190;
+      const panelX = 35;
+      const panelY = 180;
+
+      roundedRect(panelX + 4, panelY + 4, panelW, panelH, 18, "rgb(0,0,0)", null);
+      roundedRect(panelX, panelY, panelW, panelH, 18, rgb(PANEL), rgb(SOFT_WHITE), 2);
+
+      drawText("MOVES LEFT", 15, rgb(SOFT_WHITE), panelX + panelW / 2, panelY + 24);
+      drawText(String(movesLeft), 32, rgb(WHITE), panelX + panelW / 2, panelY + 60, "center", "900");
+      drawText(`SCORE: ${getCurrentScore()}`, 13, rgb(WHITE), panelX + panelW / 2, panelY + 100);
+      drawText(`BOARD: ${ROWS}x${COLS}`, 13, rgb(SOFT_WHITE), panelX + panelW / 2, panelY + 124);
+      drawText(`MODE: ${difficulty.toUpperCase()}`, 13, rgb(SOFT_WHITE), panelX + panelW / 2, panelY + 148);
+
+      const highText = bestMoves === null ? "BEST: --" : `BEST: ${bestMoves}`;
+      drawText(highText, 13, rgb(SOFT_WHITE), panelX + panelW / 2, panelY + 172);
+    }
+
+    function drawLifeMeter() {
+      const meterX = 560;
+      const meterY = 120;
+      const meterW = 24;
+      const meterH = 290;
+
+      roundedRect(meterX + 4, meterY + 4, meterW, meterH, 12, "rgb(0,0,0)", null);
+      roundedRect(meterX, meterY, meterW, meterH, 12, rgb(PANEL), rgb(SOFT_WHITE), 2);
+
+      const percentLeft = movesLeft / maxMoves;
+      const fillH = Math.floor((meterH - 8) * percentLeft);
+
+      let fillColor = COLORS[1];
+
+      if (movesLeft <= Math.floor(maxMoves / 4)) {
+        fillColor = COLORS[0];
+      } else if (movesLeft <= Math.floor(maxMoves / 2)) {
+        fillColor = COLORS[3];
+      }
+
+      roundedRect(
+        meterX + 4,
+        meterY + meterH - 4 - fillH,
+        meterW - 8,
+        fillH,
+        8,
+        rgb(fillColor),
+        null
+      );
+
+      drawText("LIFE", 15, rgb(SOFT_WHITE), meterX + meterW / 2, meterY + meterH + 20, "center", "900");
+    }
+
+    function drawBoardPanel() {
+      const x = GRID_X - 14;
+      const y = GRID_Y - 14;
+      const w = GRID_WIDTH + 28;
+      const h = GRID_HEIGHT + 28;
+
+      roundedRect(x + 6, y + 6, w, h, 18, "rgb(0,0,0)", null);
+      roundedRect(x, y, w, h, 18, rgb(PANEL), rgb(SOFT_WHITE), 3);
+    }
+
+    function drawBoard() {
+      for (let row = 0; row < ROWS; row++) {
+        for (let col = 0; col < COLS; col++) {
+          const color = COLORS[board[row][col]];
+
+          const x = GRID_X + col * CELL_SIZE;
+          const y = GRID_Y + row * CELL_SIZE;
+
+          let radius = 6;
+          let lineWidth = 3;
+
+          if (ROWS >= 30) {
+            radius = 0;
+            lineWidth = 1;
+          } else if (ROWS >= 14) {
+            radius = 3;
+            lineWidth = 2;
+          }
+
+          roundedRect(x, y, CELL_SIZE, CELL_SIZE, radius, rgb(color), rgb(DARK_LINE), lineWidth);
+        }
+      }
+    }
+
+    function drawPalettes() {
+      const panelX = PALETTE_X - 28;
+      const panelY = PALETTE_Y - 18;
+      const panelW = TOTAL_PALETTE_WIDTH + 56;
+      const panelH = BUTTON_SIZE + 36;
+
+      roundedRect(panelX + 5, panelY + 5, panelW, panelH, 18, "rgb(0,0,0)", null);
+      roundedRect(panelX, panelY, panelW, panelH, 18, rgb(PANEL), rgb(SOFT_WHITE), 2);
+
+      for (let i = 0; i < paletteButtons.length; i++) {
+        const rect = paletteButtons[i];
+        const color = COLORS[i];
+
+        roundedRect(rect.x, rect.y, rect.w, rect.h, 12, rgb(WHITE), null);
+        roundedRect(rect.x + 4, rect.y + 4, rect.w - 8, rect.h - 8, 10, rgb(color), null);
+      }
+    }
+
+    function drawResultOverlay() {
+      if (!resettingBoard) return;
+
+      ctx.fillStyle = "rgba(0,0,0,0.62)";
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      const boxW = 390;
+      const boxH = 165;
+      const boxX = Math.floor((WIDTH - boxW) / 2);
+      const boxY = Math.floor((HEIGHT - boxH) / 2);
+
+      roundedRect(boxX + 6, boxY + 6, boxW, boxH, 22, "rgb(0,0,0)", null);
+      roundedRect(boxX, boxY, boxW, boxH, 22, rgb(PANEL), null);
+
+      let borderColor = COLORS[0];
+      let messageColor = COLORS[0];
+      let subText = "Out of moves! New board starting...";
+
+      if (gameResult === "VICTORY") {
+        borderColor = COLORS[1];
+        messageColor = COLORS[1];
+        subText = "Great job! New board starting...";
+      }
+
+      roundedRect(boxX, boxY, boxW, boxH, 22, null, rgb(borderColor), 4);
+
+      drawText(gameResult, 46, rgb(messageColor), WIDTH / 2, boxY + 60, "center", "900");
+      drawText(subText, 20, rgb(SOFT_WHITE), WIDTH / 2, boxY + 112);
+    }
+
+    function drawOptionButton(rect, labelText, selected) {
+      const buttonColor = selected ? COLORS[1] : PURPLE_LINE;
+
+      roundedRect(rect.x + 3, rect.y + 3, rect.w, rect.h, 12, "rgb(0,0,0)", null);
+      roundedRect(rect.x, rect.y, rect.w, rect.h, 12, rgb(buttonColor), rgb(WHITE), 2);
+
+      drawText(labelText, 12, rgb(WHITE), rect.x + rect.w / 2, rect.y + rect.h / 2, "center", "900");
+    }
+
+    function drawSettingsModal() {
+      ctx.fillStyle = "rgba(0,0,0,0.69)";
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      roundedRect(settingsModal.x + 6, settingsModal.y + 6, settingsModal.w, settingsModal.h, 22, "rgb(0,0,0)", null);
+      roundedRect(settingsModal.x, settingsModal.y, settingsModal.w, settingsModal.h, 22, rgb(PANEL), rgb(PURPLE_LINE), 4);
+
+      drawText("SETTINGS", 32, rgb(WHITE), WIDTH / 2, 88, "center", "900");
+      drawText("Game is paused while this window is open.", 16, rgb(SOFT_WHITE), WIDTH / 2, 118);
+      drawText("Board Size", 16, rgb(WHITE), WIDTH / 2, 138);
+
+      drawOptionButton(size10Button, "10x10", ROWS === 10);
+      drawOptionButton(size14Button, "14x14", ROWS === 14);
+      drawOptionButton(size30Button, "30x30", ROWS === 30);
+
+      drawText("Difficulty", 16, rgb(WHITE), WIDTH / 2, 225);
+
+      drawOptionButton(easyButton, "EASY", difficulty === "Easy");
+      drawOptionButton(mediumButton, "MEDIUM", difficulty === "Medium");
+      drawOptionButton(hardButton, "HARD", difficulty === "Hard");
+
+      drawText(`Max Moves: ${maxMoves}`, 16, rgb(SOFT_WHITE), WIDTH / 2, 310);
+
+      roundedRect(closeSettingsButton.x + 3, closeSettingsButton.y + 3, closeSettingsButton.w, closeSettingsButton.h, 14, "rgb(0,0,0)", null);
+      roundedRect(closeSettingsButton.x, closeSettingsButton.y, closeSettingsButton.w, closeSettingsButton.h, 14, rgb(COLORS[0]), rgb(WHITE), 2);
+
+      drawText("CLOSE", 15, rgb(WHITE), closeSettingsButton.x + closeSettingsButton.w / 2, closeSettingsButton.y + closeSettingsButton.h / 2, "center", "900");
+    }
+
+    function drawFlash() {
+      if (!flashActive) return;
+
+      const elapsed = performance.now() - flashStartTime;
+
+      if (elapsed >= FLASH_DURATION) {
+        flashActive = false;
+        return;
+      }
+
+      const progress = elapsed / FLASH_DURATION;
+      const alpha = 1 - progress;
+
+      ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    }
+
+    function handleSettingsClick(pos) {
+      if (rectContains(size10Button, pos)) {
+        setBoardSize(10);
+      } else if (rectContains(size14Button, pos)) {
+        setBoardSize(14);
+      } else if (rectContains(size30Button, pos)) {
+        setBoardSize(30);
+      } else if (rectContains(easyButton, pos)) {
+        setDifficulty("Easy");
+      } else if (rectContains(mediumButton, pos)) {
+        setDifficulty("Medium");
+      } else if (rectContains(hardButton, pos)) {
+        setDifficulty("Hard");
+      } else if (rectContains(closeSettingsButton, pos)) {
+        settingsOpen = false;
+      }
+    }
+
+    function getMousePos(e) {
+      const rect = canvas.getBoundingClientRect();
+
+      return {
+        x: ((e.clientX - rect.left) / rect.width) * WIDTH,
+        y: ((e.clientY - rect.top) / rect.height) * HEIGHT
+      };
+    }
+
+    canvas.addEventListener("click", (e) => {
+      const pos = getMousePos(e);
+
+      if (settingsOpen) {
+        handleSettingsClick(pos);
+        return;
+      }
+
+      if (rectContains(resetButton, pos)) {
+        resetGameBoard();
+      } else if (rectContains(settingsButton, pos)) {
+        settingsOpen = true;
+      } else if (!resettingBoard) {
+        checkPaletteClick(pos);
+      }
+
+      canvas.focus();
+    });
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && settingsOpen) {
+        settingsOpen = false;
+      }
+    });
+
+    function draw() {
+      drawGradientBackground();
+      drawBackgroundSplats();
+      drawTitle();
+      drawResetButton();
+      drawSettingsButton();
+      drawMovesLeft();
+      drawLifeMeter();
+      drawBoardPanel();
+      drawBoard();
+      drawPalettes();
+      drawResultOverlay();
+      drawFlash();
+
+      if (settingsOpen) {
+        drawSettingsModal();
+      }
+    }
+
+    function loop() {
+      if (!settingsOpen) {
+        updateSoftReset();
+      }
+
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    rebuildLayout();
+    createEmptyBoard();
+    generateBoard();
+    maxMoves = calculateMaxMoves();
+    movesLeft = maxMoves;
+
+    loop();
+  </script>
+</body>
+</html>

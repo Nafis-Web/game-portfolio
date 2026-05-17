@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neon Clutch</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #050012;
+      font-family: Arial, Helvetica, sans-serif;
+      color: white;
+    }
+
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(255, 0, 150, 0.14), transparent 30%),
+        radial-gradient(circle at 80% 20%, rgba(0, 234, 255, 0.12), transparent 35%),
+        linear-gradient(180deg, #050010 0%, #120022 100%);
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      max-width: 1000px;
+      max-height: 700px;
+      display: block;
+      background: #080012;
+      border: 3px solid rgba(255, 0, 170, 0.75);
+      border-radius: 18px;
+      box-shadow:
+        0 0 30px rgba(255, 0, 170, 0.25),
+        0 0 45px rgba(0, 234, 255, 0.2);
+    }
+  </style>
+</head>
+
+<body>
+
+  <canvas id="game" width="1000" height="700"></canvas>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    const WIDTH = canvas.width;
+    const HEIGHT = canvas.height;
+
+    const COLORS = {
+      bg: "#070011",
+      pink: "#ff2ea6",
+      cyan: "#00eaff",
+      orange: "#ff8c42",
+      red: "#ff4b6e",
+      white: "#f3fbff",
+      purple: "#bb66ff",
+      green: "#66ffb3",
+      yellow: "#ffe066"
+    };
+
+    const audio = {
+      bgm: new Audio("audio/bgm.mp3"),
+      catch: new Audio("audio/catch.mp3"),
+      damage: new Audio("audio/damage.mp3"),
+      power: new Audio("audio/power.mp3"),
+      mission: new Audio("audio/mission.mp3"),
+      boss: new Audio("audio/boss.mp3")
+    };
+
+    audio.bgm.loop = true;
+    audio.bgm.volume = 0.3;
+
+    let muted = false;
+    let gameStarted = false;
+
+    function playSound(name) {
+      if (muted || !audio[name]) return;
+
+      try {
+        audio[name].currentTime = 0;
+        audio[name].play();
+      } catch (e) {}
+    }
+
+    function startMusic() {
+      if (!gameStarted) {
+        gameStarted = true;
+
+        if (!muted) {
+          audio.bgm.play().catch(() => {});
+        }
+      }
+    }
+
+    let gameState = "menu";
+
+    const player = {
+      x: WIDTH / 2,
+      y: HEIGHT - 85,
+      w: 110,
+      h: 20,
+      speed: 8
+    };
+
+    let keys = {};
+
+    let score = 0;
+    let highScore = Number(localStorage.getItem("neonClutchHighScore") || 0);
+
+    let lives = 3;
+    let level = 1;
+
+    let fever = 0;
+    let feverMode = false;
+    let feverTimer = 0;
+
+    let streak = 0;
+    let combo = 1;
+
+    let particles = [];
+    let texts = [];
+    let orbs = [];
+
+    let spawnTimer = 0;
+
+    class Orb {
+      constructor() {
+        const roll = Math.random();
+
+        this.type =
+          roll < 0.7
+            ? "good"
+            : roll < 0.88
+            ? "bad"
+            : "power";
+
+        this.radius = this.type === "power"
+          ? 18
+          : 10 + Math.random() * 12;
+
+        this.x = this.radius + Math.random() * (WIDTH - this.radius * 2);
+        this.y = -40;
+
+        this.speed =
+          3 +
+          Math.random() * 2 +
+          (level - 1) * 0.35;
+
+        this.color =
+          this.type === "good"
+            ? [COLORS.cyan, COLORS.pink, COLORS.yellow][Math.floor(Math.random() * 3)]
+            : this.type === "bad"
+            ? COLORS.red
+            : COLORS.green;
+
+        this.points = Math.floor(this.radius * 3);
+      }
+
+      update() {
+        this.y += this.speed;
+      }
+
+      draw() {
+        ctx.save();
+
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 22;
+
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+
+        ctx.restore();
+
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius / 3, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255,255,255,0.8)";
+        ctx.fill();
+
+        if (this.type === "power") {
+          drawText("P", this.x, this.y - 8, 18, "#001811", "center", true);
+        }
+      }
+    }
+
+    function spawnOrb() {
+      orbs.push(new Orb());
+    }
+
+    function drawText(text, x, y, size, color, align = "left", glow = false) {
+      ctx.save();
+
+      ctx.font = `bold ${size}px Arial`;
+      ctx.fillStyle = color;
+      ctx.textAlign = align;
+
+      if (glow) {
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 15;
+      }
+
+      ctx.fillText(text, x, y);
+
+      ctx.restore();
+    }
+
+    function addParticles(x, y, color) {
+      for (let i = 0; i < 12; i++) {
+        particles.push({
+          x,
+          y,
+          vx: (Math.random() - 0.5) * 5,
+          vy: (Math.random() - 0.5) * 5,
+          life: 35,
+          color
+        });
+      }
+    }
+
+    function addFloatingText(text, x, y, color) {
+      texts.push({
+        text,
+        x,
+        y,
+        color,
+        life: 60
+      });
+    }
+
+    function resetGame() {
+      startMusic();
+
+      score = 0;
+      lives = 3;
+      level = 1;
+
+      fever = 0;
+      feverMode = false;
+      feverTimer = 0;
+
+      streak = 0;
+      combo = 1;
+
+      particles = [];
+      texts = [];
+      orbs = [];
+
+      gameState = "playing";
+    }
+
+    function updateGame() {
+
+      if (keys.ArrowLeft || keys.a || keys.A) {
+        player.x -= player.speed;
+      }
+
+      if (keys.ArrowRight || keys.d || keys.D) {
+        player.x += player.speed;
+      }
+
+      player.x = Math.max(player.w / 2, Math.min(WIDTH - player.w / 2, player.x));
+
+      spawnTimer++;
+
+      const delay = Math.max(16, 42 - level);
+
+      if (spawnTimer >= delay) {
+        spawnOrb();
+        spawnTimer = 0;
+      }
+
+      for (let i = orbs.length - 1; i >= 0; i--) {
+
+        const orb = orbs[i];
+
+        orb.update();
+
+        const caught =
+          orb.x > player.x - player.w / 2 &&
+          orb.x < player.x + player.w / 2 &&
+          orb.y + orb.radius > player.y &&
+          orb.y - orb.radius < player.y + player.h;
+
+        if (caught) {
+
+          if (orb.type === "good") {
+
+            streak++;
+            combo = Math.min(5, 1 + Math.floor(streak / 5));
+
+            let gained = orb.points * combo;
+
+            if (feverMode) gained *= 2;
+
+            score += gained;
+
+            fever += 8;
+
+            addParticles(orb.x, orb.y, orb.color);
+
+            addFloatingText(
+              "+" + gained,
+              orb.x,
+              orb.y,
+              COLORS.cyan
+            );
+
+            playSound("catch");
+
+          } else if (orb.type === "power") {
+
+            fever += 20;
+
+            addFloatingText(
+              "POWER",
+              orb.x,
+              orb.y,
+              COLORS.green
+            );
+
+            playSound("power");
+
+          } else {
+
+            lives--;
+
+            streak = 0;
+            combo = 1;
+
+            addFloatingText(
+              "-1 LIFE",
+              orb.x,
+              orb.y,
+              COLORS.red
+            );
+
+            playSound("damage");
+
+            if (lives <= 0) {
+              gameState = "game_over";
+
+              if (score > highScore) {
+                highScore = score;
+                localStorage.setItem(
+                  "neonClutchHighScore",
+                  highScore
+                );
+              }
+            }
+          }
+
+          orbs.splice(i, 1);
+          continue;
+        }
+
+        if (orb.y > HEIGHT + 50) {
+          orbs.splice(i, 1);
+
+          if (orb.type === "good") {
+            streak = 0;
+            combo = 1;
+          }
+        }
+      }
+
+      if (!feverMode && fever >= 100) {
+        feverMode = true;
+        fever = 0;
+        feverTimer = 600;
+
+        addFloatingText(
+          "FEVER MODE",
+          WIDTH / 2,
+          HEIGHT / 2,
+          COLORS.yellow
+        );
+
+        playSound("mission");
+      }
+
+      if (feverMode) {
+        feverTimer--;
+
+        if (feverTimer <= 0) {
+          feverMode = false;
+        }
+      }
+
+      level = Math.floor(score / 1200) + 1;
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+
+        const p = particles[i];
+
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life--;
+
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+        }
+      }
+
+      for (let i = texts.length - 1; i >= 0; i--) {
+
+        const t = texts[i];
+
+        t.y -= 0.5;
+        t.life--;
+
+        if (t.life <= 0) {
+          texts.splice(i, 1);
+        }
+      }
+    }
+
+    function drawBackground() {
+
+      const bg = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+
+      bg.addColorStop(0, "#090012");
+      bg.addColorStop(1, "#18002b");
+
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      ctx.strokeStyle = "rgba(255,255,255,0.05)";
+
+      for (let i = 0; i < WIDTH; i += 50) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i, HEIGHT);
+        ctx.stroke();
+      }
+
+      for (let i = 0; i < HEIGHT; i += 50) {
+        ctx.beginPath();
+        ctx.moveTo(0, i);
+        ctx.lineTo(WIDTH, i);
+        ctx.stroke();
+      }
+    }
+
+    function drawPlayer() {
+
+      ctx.save();
+
+      ctx.shadowColor = COLORS.pink;
+      ctx.shadowBlur = 20;
+
+      ctx.fillStyle = COLORS.pink;
+
+      ctx.beginPath();
+      ctx.roundRect(
+        player.x - player.w / 2,
+        player.y,
+        player.w,
+        player.h,
+        12
+      );
+
+      ctx.fill();
+
+      ctx.restore();
+
+      ctx.fillStyle = COLORS.cyan;
+
+      ctx.beginPath();
+      ctx.arc(player.x, player.y - 8, 16, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawHUD() {
+
+      drawText(
+        "SCORE: " + score,
+        25,
+        40,
+        22,
+        COLORS.white,
+        "left",
+        true
+      );
+
+      drawText(
+        "HIGH: " + highScore,
+        25,
+        72,
+        16,
+        COLORS.yellow
+      );
+
+      drawText(
+        "LEVEL: " + level,
+        WIDTH / 2,
+        40,
+        22,
+        COLORS.cyan,
+        "center",
+        true
+      );
+
+      drawText(
+        "LIVES: " + lives,
+        WIDTH - 25,
+        40,
+        22,
+        COLORS.red,
+        "right",
+        true
+      );
+
+      drawText(
+        "COMBO x" + combo,
+        WIDTH - 25,
+        72,
+        18,
+        COLORS.orange,
+        "right"
+      );
+
+      ctx.fillStyle = "rgba(255,255,255,0.1)";
+      ctx.fillRect(WIDTH / 2 - 120, 68, 240, 12);
+
+      ctx.fillStyle = feverMode
+        ? COLORS.yellow
+        : COLORS.purple;
+
+      ctx.fillRect(
+        WIDTH / 2 - 120,
+        68,
+        feverMode
+          ? (feverTimer / 600) * 240
+          : (fever / 100) * 240,
+        12
+      );
+
+      drawText(
+        feverMode ? "FEVER ACTIVE" : "FEVER",
+        WIDTH / 2,
+        88,
+        15,
+        COLORS.yellow,
+        "center"
+      );
+    }
+
+    function drawMenu() {
+
+      drawText(
+        "NEON CLUTCH",
+        WIDTH / 2,
+        180,
+        72,
+        COLORS.pink,
+        "center",
+        true
+      );
+
+      drawText(
+        "Catch good orbs. Avoid danger.",
+        WIDTH / 2,
+        270,
+        26,
+        COLORS.white,
+        "center"
+      );
+
+      drawText(
+        "Move: ← → or A / D",
+        WIDTH / 2,
+        360,
+        24,
+        COLORS.cyan,
+        "center"
+      );
+
+      drawText(
+        "Press SPACE to Start",
+        WIDTH / 2,
+        470,
+        34,
+        COLORS.yellow,
+        "center",
+        true
+      );
+    }
+
+    function drawGameOver() {
+
+      drawText(
+        "GAME OVER",
+        WIDTH / 2,
+        240,
+        72,
+        COLORS.red,
+        "center",
+        true
+      );
+
+      drawText(
+        "FINAL SCORE: " + score,
+        WIDTH / 2,
+        340,
+        34,
+        COLORS.white,
+        "center"
+      );
+
+      drawText(
+        "Press R to Restart",
+        WIDTH / 2,
+        430,
+        28,
+        COLORS.yellow,
+        "center"
+      );
+    }
+
+    function render() {
+
+      drawBackground();
+
+      for (const orb of orbs) {
+        orb.draw();
+      }
+
+      for (const p of particles) {
+
+        ctx.globalAlpha = p.life / 35;
+
+        ctx.fillStyle = p.color;
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.globalAlpha = 1;
+      }
+
+      for (const t of texts) {
+
+        ctx.globalAlpha = t.life / 60;
+
+        drawText(
+          t.text,
+          t.x,
+          t.y,
+          20,
+          t.color,
+          "center",
+          true
+        );
+
+        ctx.globalAlpha = 1;
+      }
+
+      if (gameState === "menu") {
+        drawMenu();
+      }
+
+      if (gameState === "playing") {
+        drawPlayer();
+        drawHUD();
+      }
+
+      if (gameState === "game_over") {
+        drawPlayer();
+        drawHUD();
+        drawGameOver();
+      }
+    }
+
+    function loop() {
+
+      if (gameState === "playing") {
+        updateGame();
+      }
+
+      render();
+
+      requestAnimationFrame(loop);
+    }
+
+    window.addEventListener("keydown", (e) => {
+
+      keys[e.key] = true;
+
+      if ([
+        "ArrowLeft",
+        "ArrowRight",
+        "Space"
+      ].includes(e.code)) {
+        e.preventDefault();
+      }
+
+      if (gameState === "menu" && e.code === "Space") {
+        resetGame();
+      }
+
+      if (
+        gameState === "game_over" &&
+        e.key.toLowerCase() === "r"
+      ) {
+        resetGame();
+      }
+
+      if (e.key.toLowerCase() === "m") {
+
+        muted = !muted;
+
+        Object.values(audio).forEach(a => {
+          a.muted = muted;
+        });
+      }
+    });
+
+    window.addEventListener("keyup", (e) => {
+      keys[e.key] = false;
+    });
+
+    loop();
+
+  </script>
+
+</body>
+</html>
