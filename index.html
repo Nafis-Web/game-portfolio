@@ -304,14 +304,11 @@
 </head>
 
 <body>
-
   <div class="bg"></div>
   <div class="scanlines"></div>
 
   <div class="arena">
-
     <header>
-
       <div class="title-zone">
         <h2>GAMECOM</h2>
         <span>ARENA</span>
@@ -320,16 +317,13 @@
       <div class="top-area">
         <button class="top-nav" id="homeBtn">⌂ Home</button>
       </div>
-
     </header>
 
     <section class="dashboard">
-
       <aside class="dock">
-
         <div class="dock-title">Game Dock</div>
 
-        <button class="game-btn" data-path="snake/snake.html" data-title="Snake">
+        <button class="game-btn" data-path="./snake/snake.html" data-title="Snake">
           <div class="game-icon">🐍</div>
           <div>
             <div class="game-name">Snake</div>
@@ -337,7 +331,7 @@
           </div>
         </button>
 
-        <button class="game-btn" data-path="tetris/tetris.html" data-title="Tetris">
+        <button class="game-btn" data-path="./tetris/tetris.html" data-title="Tetris">
           <div class="game-icon">🧱</div>
           <div>
             <div class="game-name">Tetris</div>
@@ -345,7 +339,7 @@
           </div>
         </button>
 
-        <button class="game-btn" data-path="pong/pong.html" data-title="Ping Pong">
+        <button class="game-btn" data-path="./pong/pong.html" data-title="Ping Pong">
           <div class="game-icon">🏓</div>
           <div>
             <div class="game-name">Ping Pong</div>
@@ -353,7 +347,7 @@
           </div>
         </button>
 
-        <button class="game-btn" data-path="ink_spill/ink_spill.html" data-title="Ink Spill">
+        <button class="game-btn" data-path="./ink_spill/ink_spill.html" data-title="Ink Spill">
           <div class="game-icon">🎨</div>
           <div>
             <div class="game-name">Ink Spill</div>
@@ -361,7 +355,7 @@
           </div>
         </button>
 
-        <button class="game-btn" data-path="Gem_Gem/gem_gem.html" data-title="Gem Gem">
+        <button class="game-btn" data-path="./Gem_Gem/gem_gem.html" data-title="Gem Gem">
           <div class="game-icon">💎</div>
           <div>
             <div class="game-name">Gem Gem</div>
@@ -369,7 +363,7 @@
           </div>
         </button>
 
-        <button class="game-btn" data-path="space_shooter/space_shooter.html" data-title="Space Shooter">
+        <button class="game-btn" data-path="./space_shooter/space_shooter.html" data-title="Space Shooter">
           <div class="game-icon">🚀</div>
           <div>
             <div class="game-name">Space Shooter</div>
@@ -377,30 +371,27 @@
           </div>
         </button>
 
-        <button class="game-btn" data-path="Neon_clutch/neon_clutch.html" data-title="Neon Clutch">
+        <button class="game-btn" data-path="./Neon_clutch/neon_clutch.html" data-title="Neon Clutch">
           <div class="game-icon">⚡</div>
           <div>
             <div class="game-name">Neon Clutch</div>
             <div class="game-type">Midterm</div>
           </div>
         </button>
-
       </aside>
 
       <main class="machine" id="machine">
-
         <div class="marquee">
           <div id="currentGame">SELECT GAME</div>
         </div>
 
         <div class="screen-shell">
-
           <div id="placeholder" class="placeholder">
             <div>
               <div class="pad">🎮</div>
               <h3>Ready To Play?</h3>
               <p>
-                Select a game from the dock<br>
+                Select a game from the dock<br />
                 and start playing
               </p>
             </div>
@@ -413,13 +404,9 @@
             src="about:blank"
             allow="autoplay"
           ></iframe>
-
         </div>
-
       </main>
-
     </section>
-
   </div>
 
   <script>
@@ -431,8 +418,8 @@
     const machine = document.getElementById("machine");
 
     function clearButtons() {
-      gameButtons.forEach(btn => {
-        btn.classList.remove("active-btn");
+      gameButtons.forEach(button => {
+        button.classList.remove("active-btn");
       });
     }
 
@@ -448,55 +435,45 @@
     }
 
     function loadGame(path, button) {
+      const cleanPath = path.replace(/^\.?\//, "./");
+      const cacheBustedPath = cleanPath + "?v=" + Date.now();
 
       placeholder.style.display = "none";
-
       gameFrame.src = "about:blank";
 
       setTimeout(() => {
-        gameFrame.src = path;
-      }, 50);
+        gameFrame.src = cacheBustedPath;
+      }, 100);
 
-      currentGame.textContent = button.dataset.title;
+      currentGame.textContent = button.dataset.title || "GAME LOADED";
 
       clearButtons();
-
       button.classList.add("active-btn");
 
       centerGameWindow();
+
+      console.log("Loading:", cacheBustedPath);
     }
 
     gameButtons.forEach(button => {
-
       button.addEventListener("click", () => {
-
-        const path = button.dataset.path;
-
-        loadGame(path, button);
-
+        loadGame(button.dataset.path, button);
       });
-
     });
 
     homeBtn.addEventListener("click", () => {
-
       gameFrame.src = "about:blank";
-
       currentGame.textContent = "SELECT GAME";
-
       placeholder.style.display = "flex";
-
       clearButtons();
 
       window.scrollTo({
         top: 0,
         behavior: "smooth"
       });
-
     });
 
     window.addEventListener("keydown", event => {
-
       const blocked = [
         "ArrowUp",
         "ArrowDown",
@@ -508,9 +485,7 @@
       if (blocked.includes(event.code)) {
         event.preventDefault();
       }
-
     });
   </script>
-
 </body>
 </html>
